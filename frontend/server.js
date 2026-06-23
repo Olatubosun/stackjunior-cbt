@@ -10,6 +10,8 @@ const PORT = process.env.PORT || 3000;
 // Base path the SPA is served under behind a reverse proxy (e.g. "/cbt").
 // Empty string means it is served at the root (local development).
 const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+// Bind host — 127.0.0.1 behind a reverse proxy, 0.0.0.0 for local dev.
+const HOST = process.env.HOST || '0.0.0.0';
 
 // Where the browser should send API calls. In production the API is same-origin
 // under the base path (e.g. /cbt/api); in local dev it is the standalone
@@ -52,6 +54,6 @@ app.get(`${BASE_PATH}/*`, sendIndex);
 // Also answer the bare base path with no trailing slash (e.g. /cbt?token=...).
 if (BASE_PATH) app.get(BASE_PATH, sendIndex);
 
-app.listen(PORT, () => {
-  console.log(`Frontend running on http://localhost:${PORT}${BASE_PATH}`);
+app.listen(PORT, HOST, () => {
+  console.log(`Frontend running on ${HOST}:${PORT}${BASE_PATH}`);
 });

@@ -22,6 +22,9 @@ const app = express();
 // Empty string mounts at the root (local development → /api).
 const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
 const at = (p) => `${BASE_PATH}${p}`;
+// Bind host — set to 127.0.0.1 behind a reverse proxy so the port isn't
+// exposed on all interfaces. Defaults to 0.0.0.0 for local dev.
+const HOST = process.env.HOST || '0.0.0.0';
 
 // ── Security middleware ────────────────────────────────────────
 app.use(helmet());
@@ -107,8 +110,8 @@ sequelize
   .then(() => sequelize.sync())
   .then(() => {
     console.log('Connected to MySQL and synced models');
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+    app.listen(PORT, HOST, () => {
+      console.log(`Server running on ${HOST}:${PORT}`);
     });
   })
   .catch((err) => {
