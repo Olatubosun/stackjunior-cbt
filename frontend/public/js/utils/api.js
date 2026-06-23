@@ -69,9 +69,10 @@ const Api = (() => {
     getSchoolClasses:   (id)      => request('GET', `/schools/${id}/classes`),
 
     // ── AI ─────────────────────────────────────────────────
-    aiGenerateQuestions: (body) => request('POST', '/ai/generate-questions',  body),
-    aiGenerateFromText:  (body) => request('POST', '/ai/generate-from-text',  body),
-    aiScanPaper:         (body) => request('POST', '/ai/scan-paper',          body),
+    aiGenerateQuestions:    (body) => request('POST', '/ai/generate-questions', body),
+    aiGenerateFromText:     (body) => request('POST', '/ai/generate-from-text', body),
+    aiGenerateExternalExam: (body) => request('POST', '/ai/external-exam',      body),
+    aiScanPaper:            (body) => request('POST', '/ai/scan-paper',         body),
     aiMarkAnswer:        (body) => request('POST', '/ai/mark-answer',         body),
     aiGenerateFeedback:  (body) => request('POST', '/ai/generate-feedback',   body),
   };
