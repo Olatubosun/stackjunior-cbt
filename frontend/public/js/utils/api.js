@@ -47,7 +47,8 @@ const Api = (() => {
     bulkImport:      (body)        => request('POST',   '/questions/bulk', body),
 
     // ── Exams ──────────────────────────────────────────────
-    getExams:    ()              => request('GET',    '/exams'),
+    getExams:       ()           => request('GET',    '/exams'),
+    getReadyExams:  ()           => request('GET',    '/exams/ready'),
     getExam:     (id)            => request('GET',    `/exams/${id}`),
     createExam:  (body)          => request('POST',   '/exams', body),
     updateExam:  (id, body)      => request('PUT',    `/exams/${id}`, body),

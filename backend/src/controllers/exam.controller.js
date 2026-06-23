@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Exam, Question, User, Class } = require('../models');
+const { Exam, Question, User, Class, Result } = require('../models');
 
 exports.getExams = async (req, res, next) => {
   try {
@@ -29,6 +29,87 @@ exports.getExams = async (req, res, next) => {
       order: [['createdAt', 'DESC']],
     });
     res.json({ exams, count: exams.length });
+  } catch (err) { next(err); }
+};
+
+/**
+ * Ready exams for the current user — the feed behind the student "plan" card.
+ *
+ * An exam is "ready" when it is approved/released (status published or active)
+ * AND currently inside its open window: the open date has passed (scheduledStart
+ * null or <= now) and it has not closed (scheduledEnd null or >= now).
+ *
+ * Students are scoped to their school and, when known, their class. Staff get
+ * their school's ready exams (no class filter) so they can preview.
+ *
+ * Returns { exams, subjects, count } where `subjects` is the distinct subject
+ * list the card headlines and each exam carries a `questionCount` and (for
+ * students) an `attempted` flag.
+ */
+exports.getReadyExams = async (req, res, next) => {
+  try {
+    const u   = req.user;
+    const now = new Date();
+
+    const where = {
+      status: { [Op.in]: ['published', 'active'] },
+      [Op.and]: [
+        { [Op.or]: [{ scheduledStart: null }, { scheduledStart: { [Op.lte]: now } }] },
+        { [Op.or]: [{ scheduledEnd:   null }, { scheduledEnd:   { [Op.gte]: now } }] },
+      ],
+    };
+
+    if (u.role === 'student') {
+      if (!u.school) return res.json({ exams: [], subjects: [], count: 0 });
+      where.school = u.school;
+      if (u.classId) where.classId = u.classId;
+    } else if (u.school) {
+      where.school = u.school;
+    } else {
+      return res.json({ exams: [], subjects: [], count: 0 });
+    }
+
+    const exams = await Exam.findAll({
+      where,
+      include: [
+        { model: Class,    as: 'classRecord', attributes: ['id', 'name'] },
+        { model: Question, as: 'questions',   attributes: ['id'], through: { attributes: [] } },
+      ],
+      order: [['scheduledStart', 'ASC'], ['createdAt', 'DESC']],
+    });
+
+    // Which of these the student has already sat (submitted or beyond).
+    let attempted = new Set();
+    if (u.role === 'student' && exams.length) {
+      const results = await Result.findAll({
+        attributes: ['exam'],
+        where: {
+          student: u.id,
+          exam:    { [Op.in]: exams.map(e => e.id) },
+          status:  { [Op.in]: ['submitted', 'marking', 'marked', 'released'] },
+        },
+      });
+      attempted = new Set(results.map(r => r.exam));
+    }
+
+    const shaped = exams.map(e => ({
+      id:             e.id,
+      title:          e.title,
+      subject:        e.subject,
+      classLevel:     e.classLevel,
+      className:      e.classRecord?.name || null,
+      mode:           e.mode,
+      duration:       e.duration,
+      totalMarks:     e.totalMarks,
+      passMark:       e.passMark,
+      questionCount:  (e.questions || []).length,
+      scheduledStart: e.scheduledStart,
+      scheduledEnd:   e.scheduledEnd,
+      attempted:      attempted.has(e.id),
+    }));
+
+    const subjects = [...new Set(shaped.map(e => e.subject))].sort();
+    res.json({ exams: shaped, subjects, count: shaped.length });
   } catch (err) { next(err); }
 };
 

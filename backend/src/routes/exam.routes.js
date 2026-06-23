@@ -7,6 +7,7 @@ const canManage = ['super_admin','school_admin','exam_officer','subject_teacher'
 
 router.use(protect);
 router.get('/',          ctrl.getExams);
+router.get('/ready',     ctrl.getReadyExams); // must precede '/:id'
 router.post('/',         authorise(...canManage), ctrl.createExam);
 router.get('/:id',       examAccess(),                                ctrl.getExam);
 router.put('/:id',       authorise(...canManage), examAccess(),       ctrl.updateExam);
