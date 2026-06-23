@@ -1,7 +1,11 @@
 // js/utils/api.js
 // Central API client — all fetch calls go through here
 
-const API_BASE = 'http://localhost:5000/api';
+// Resolved at runtime from config.js (window.CBT_CONFIG), with a local-dev
+// fallback so the SPA still works if served without the config endpoint.
+const API_BASE =
+  (typeof window !== 'undefined' && window.CBT_CONFIG && window.CBT_CONFIG.apiBase)
+  || 'http://localhost:5000/api';
 
 const Api = (() => {
 

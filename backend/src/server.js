@@ -18,6 +18,11 @@ const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
 
+// Base path the API is mounted under behind a reverse proxy (e.g. "/cbt").
+// Empty string mounts at the root (local development → /api).
+const BASE_PATH = (process.env.BASE_PATH || '').replace(/\/+$/, '');
+const at = (p) => `${BASE_PATH}${p}`;
+
 // ── Security middleware ────────────────────────────────────────
 app.use(helmet());
 app.use(cors({
@@ -31,7 +36,7 @@ const limiter = rateLimit({
   max: process.env.NODE_ENV === 'development' ? 5000 : 100,
   message: { error: 'Too many requests, please try again later.' },
 });
-app.use('/api', limiter);
+app.use(at('/api'), limiter);
 
 // Stricter limiter for login attempts (brute-force protection)
 const loginLimiter = rateLimit({
@@ -41,7 +46,8 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
-app.use('/api/auth/login', loginLimiter);
+app.use(at('/api/auth/login'), loginLimiter);
+app.use(at('/api/auth/sso'),   loginLimiter);
 
 // ── Body parsing ───────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
@@ -49,26 +55,26 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 app.use(morgan('dev'));
 
 // ── Static uploads ─────────────────────────────────────────────
-app.use('/uploads', express.static('uploads'));
+app.use(at('/uploads'), express.static('uploads'));
 
 // ── Routes ─────────────────────────────────────────────────────
-app.use('/api/auth',      authRoutes);
-app.use('/api/users',     userRoutes);
-app.use('/api/questions', questionRoutes);
-app.use('/api/exams',     examRoutes);
-app.use('/api/results',   resultRoutes);
-app.use('/api/ai',        aiRoutes);
-app.use('/api/schools',   schoolRoutes);
+app.use(at('/api/auth'),      authRoutes);
+app.use(at('/api/users'),     userRoutes);
+app.use(at('/api/questions'), questionRoutes);
+app.use(at('/api/exams'),     examRoutes);
+app.use(at('/api/results'),   resultRoutes);
+app.use(at('/api/ai'),        aiRoutes);
+app.use(at('/api/schools'),   schoolRoutes);
 
 // ── Landing + health check ─────────────────────────────────────
-app.get('/', (req, res) => {
+app.get(at('/'), (req, res) => {
   res.json({
     name: 'StackJunior CBT API',
     status: 'running',
-    docs: '/api/health',
+    docs: at('/api/health'),
   });
 });
-app.get('/api/health', (req, res) => {
+app.get(at('/api/health'), (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
