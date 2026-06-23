@@ -606,6 +606,67 @@ exports.login = async (req, res, next) => {
   }
 };
 
+/**
+ * SSO entry — exchange a StackJunior-issued JWT for a local CBT session.
+ *
+ * Used when StackJunior redirects an already-authenticated web user to the CBT
+ * (e.g. /cbt?token=...). There is no password: the StackJunior JWT itself is
+ * the proof of identity. We validate it against StackJunior's authoritative
+ * profile endpoint, then reuse the exact same provisioning path as password
+ * login (upsertExternalUser → issueLocalSession).
+ *
+ * NOTE (verify on UAT): provisioning relies on the identity fields present in
+ * the /school/user/info response. Staff (school/admin/teacher/exam-officer)
+ * are fully resolved there; the student-token field shape (parent → school,
+ * class linkage) must be confirmed against the live StackJunior API before
+ * prod — see [[stackjunior-cbt-integration]].
+ */
+exports.ssoLogin = async (req, res, next) => {
+  const token = (req.body.token || req.query.token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Missing SSO token.' });
+
+  try {
+    // Validate the token and resolve the authoritative account type. A null
+    // result means the token is invalid/expired or the service is unreachable.
+    const infoUser = await fetchStackjuniorUserInfo(token);
+    if (!infoUser) {
+      return res.status(401).json({ error: 'Invalid or expired single sign-on session.' });
+    }
+
+    const identifier = infoUser.email || infoUser.username || '';
+    if (!identifier) {
+      return res.status(502).json({ error: 'Could not resolve your account from StackJunior.' });
+    }
+
+    // Reuse the password-login provisioning by synthesising the login-response
+    // shape it expects. is_school routes school-side users through the
+    // authoritative /school/user/info classification inside upsertExternalUser;
+    // students (no school_user_type and no admin_school_id) take the student path.
+    const sjType    = String(infoUser.school_user_type || '').trim().toLowerCase();
+    const isStudent = sjType === 'student' || (!sjType && infoUser.admin_school_id == null);
+    const syntheticPayload = {
+      data: {
+        token,
+        user: { ...infoUser, is_school: !isStudent, is_parent: false },
+      },
+    };
+
+    let user;
+    try {
+      user = await upsertExternalUser(identifier, syntheticPayload);
+    } catch (err) {
+      if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+      throw err;
+    }
+    if (!user.isActive) return res.status(401).json({ error: 'Account is inactive.' });
+
+    return res.json(await issueLocalSession(user, 'stackjunior-sso'));
+  } catch (err) {
+    console.error('[auth.ssoLogin] unexpected error:', err.message);
+    next(err);
+  }
+};
+
 exports.getMe = async (req, res) => {
   let schoolName = null;
   if (req.user?.school) {

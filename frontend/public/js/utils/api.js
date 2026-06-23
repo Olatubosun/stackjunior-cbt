@@ -33,9 +33,10 @@ const Api = (() => {
     delete: (path)        => request('DELETE', path),
 
     // ── Auth ───────────────────────────────────────────────
-    login:    (body) => request('POST', '/auth/login',    body),
-    register: (body) => request('POST', '/auth/register', body),
-    getMe:    ()     => request('GET',  '/auth/me'),
+    login:    (body)  => request('POST', '/auth/login',    body),
+    register: (body)  => request('POST', '/auth/register', body),
+    ssoLogin: (token) => request('POST', '/auth/sso',      { token }),
+    getMe:    ()      => request('GET',  '/auth/me'),
 
     // ── Questions ──────────────────────────────────────────
     getQuestions:    (params = '') => request('GET',    `/questions${params}`),
