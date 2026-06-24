@@ -116,6 +116,11 @@ const App = {
     if (!dest && document.referrer && Auth.isSafeReturnUrl(document.referrer)) {
       dest = document.referrer;
     }
+    // Final fallback: the configured StackJunior web app, so SSO users never
+    // get stranded on the standalone CBT login page.
+    if (!dest && window.CBT_CONFIG && window.CBT_CONFIG.stackjuniorUrl) {
+      dest = window.CBT_CONFIG.stackjuniorUrl;
+    }
     Auth.clearSession();
     if (dest) {
       window.location.href = dest;

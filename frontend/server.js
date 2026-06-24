@@ -19,6 +19,15 @@ const HOST = process.env.HOST || '0.0.0.0';
 const API_BASE = process.env.API_BASE
   || (BASE_PATH ? `${BASE_PATH}/api` : 'http://localhost:5000/api');
 
+// StackJunior web app URL — where SSO users are sent on logout if no explicit
+// return URL was provided. Empty in standalone/local use.
+const STACKJUNIOR_WEB_URL = process.env.STACKJUNIOR_WEB_URL || '';
+
+// Cache-busting token for the SPA's own assets. Changes each process start
+// (i.e. each deploy/restart) so long-lived CDN/browser caches don't serve
+// stale js/css after an update.
+const ASSET_VER = process.env.ASSET_VER || String(Date.now());
+
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 app.use(morgan('dev'));
@@ -27,7 +36,11 @@ app.use(express.json());
 // ── Runtime config ─────────────────────────────────────────────
 // Exposed to the browser as window.CBT_CONFIG; loaded before api.js.
 const configScript =
-  `window.CBT_CONFIG = ${JSON.stringify({ basePath: BASE_PATH, apiBase: API_BASE })};`;
+  `window.CBT_CONFIG = ${JSON.stringify({
+    basePath: BASE_PATH,
+    apiBase: API_BASE,
+    stackjuniorUrl: STACKJUNIOR_WEB_URL,
+  })};`;
 app.get(`${BASE_PATH}/config.js`, (req, res) => {
   res.type('application/javascript').send(configScript);
 });
@@ -44,11 +57,16 @@ let indexHtml = null;
 const renderIndex = () => {
   if (indexHtml == null) {
     const raw = fs.readFileSync(path.join(PUBLIC_DIR, 'index.html'), 'utf8');
-    indexHtml = raw.replace('<!--BASE-->', `<base href="${BASE_PATH}/" />`);
+    indexHtml = raw
+      .replace('<!--BASE-->', `<base href="${BASE_PATH}/" />`)
+      // Append a version query to local css/js refs so a deploy invalidates
+      // any long-lived cache (the index itself is served no-cache below).
+      .replace(/((?:src|href)=")([^":]+\.(?:js|css))(")/g, `$1$2?v=${ASSET_VER}$3`);
   }
   return indexHtml;
 };
-const sendIndex = (req, res) => res.type('html').send(renderIndex());
+const sendIndex = (req, res) =>
+  res.set('Cache-Control', 'no-cache').type('html').send(renderIndex());
 
 app.get(`${BASE_PATH}/*`, sendIndex);
 // Also answer the bare base path with no trailing slash (e.g. /cbt?token=...).
