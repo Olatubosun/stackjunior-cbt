@@ -344,6 +344,10 @@ const upsertStudentsForSchool = async (schoolId, externalStudents) => {
 };
 
 // Upsert classes returned by Stackjunior for the given school.
+// Classes are unique per school on BOTH externalId and name, and Stackjunior
+// can return duplicate class names — so each row is upserted defensively and a
+// row that can't be saved is skipped rather than aborting the whole sync
+// (which would also skip the student roster that runs afterwards).
 const upsertClassesForSchool = async (schoolId, externalClasses) => {
   if (!Array.isArray(externalClasses) || !externalClasses.length) return [];
   const results = [];
@@ -351,22 +355,26 @@ const upsertClassesForSchool = async (schoolId, externalClasses) => {
     const externalId = String(raw?.id ?? raw?.class_id ?? '').trim();
     const name       = raw?.name || raw?.class_name || raw?.title;
     if (!externalId && !name) continue;
-
-    const where = externalId
-      ? { schoolId, externalId }
-      : { schoolId, name };
-    let cls = await Class.findOne({ where });
-    if (!cls) {
-      cls = await Class.create({
-        schoolId,
-        externalId: externalId || null,
-        name:       name || `Class ${externalId}`,
-      });
-    } else if (name && cls.name !== name) {
-      cls.name = name;
-      await cls.save();
+    try {
+      // Match on externalId first, then fall back to name (both unique/school).
+      let cls = externalId
+        ? await Class.findOne({ where: { schoolId, externalId } })
+        : null;
+      if (!cls && name) cls = await Class.findOne({ where: { schoolId, name } });
+      if (!cls) {
+        cls = await Class.create({
+          schoolId,
+          externalId: externalId || null,
+          name:       name || `Class ${externalId}`,
+        });
+      } else if (externalId && !cls.externalId) {
+        await cls.update({ externalId });
+      }
+      results.push(cls);
+    } catch (err) {
+      // e.g. a duplicate class name — skip this one and keep going.
+      console.error(`[stackjunior] sync class ${externalId || name}: ${err.message}`);
     }
-    results.push(cls);
   }
   return results;
 };
