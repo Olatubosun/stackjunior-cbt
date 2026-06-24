@@ -17,6 +17,9 @@ const schoolRoutes    = require('./routes/school.routes');
 const { errorHandler } = require('./middleware/error.middleware');
 
 const app = express();
+// Behind nginx — trust the proxy so req.ip / rate-limiting use the real client
+// IP from X-Forwarded-For instead of the proxy's address.
+app.set('trust proxy', 1);
 
 // Base path the API is mounted under behind a reverse proxy (e.g. "/cbt").
 // Empty string mounts at the root (local development → /api).
