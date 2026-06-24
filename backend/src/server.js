@@ -92,6 +92,11 @@ sequelize
   .then(async () => {
     // Idempotent column migrations for existing tables
     const addColumnIfMissing = async (table, column, ddl) => {
+      // Skip on a fresh DB — the table doesn't exist yet, and sync() below
+      // creates the full, up-to-date schema. These migrations only patch
+      // pre-existing tables.
+      const [tbls] = await sequelize.query(`SHOW TABLES LIKE '${table}'`);
+      if (!tbls.length) return;
       const [rows] = await sequelize.query(
         `SHOW COLUMNS FROM \`${table}\` LIKE '${column}'`
       );
