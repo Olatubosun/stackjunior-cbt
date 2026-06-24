@@ -40,8 +40,7 @@ const Navbar = {
   init() {
     document.addEventListener('click', (e) => {
       if (e.target.id === 'btn-logout') {
-        Auth.clearSession();
-        App.navigate('login');
+        App.logout();
       }
 
       const pageLink = e.target.closest('[data-page]');

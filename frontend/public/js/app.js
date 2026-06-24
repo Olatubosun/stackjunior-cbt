@@ -52,10 +52,12 @@ const App = {
   async init() {
     Navbar.init();
 
-    // SSO entry: StackJunior redirects an authenticated user here with ?token=.
-    const ssoToken = new URLSearchParams(window.location.search).get('token');
+    // SSO entry: StackJunior redirects an authenticated user here with ?token=
+    // (and optionally &return= to send them back to on logout).
+    const params   = new URLSearchParams(window.location.search);
+    const ssoToken = params.get('token');
     if (ssoToken) {
-      await this.handleSso(ssoToken);
+      await this.handleSso(ssoToken, params.get('return'));
       return;
     }
 
@@ -70,7 +72,7 @@ const App = {
   // Exchange a StackJunior SSO token for a local CBT session, then land the
   // user on their dashboard. The token is scrubbed from the URL either way so
   // it can't be bookmarked, shared or replayed.
-  async handleSso(token) {
+  async handleSso(token, returnUrl) {
     const app = document.getElementById('app');
     if (app) {
       app.innerHTML =
@@ -88,6 +90,8 @@ const App = {
       const data = await Api.ssoLogin(token);
       if (!data?.token || !data?.user) throw new Error('Unexpected response from server.');
       Auth.setSession(data.token, data.user);
+      // Remember where to send the user when they log out (back to StackJunior).
+      if (returnUrl) Auth.setReturnUrl(returnUrl);
       // Refresh the stored user so fields like schoolName populate
       try {
         const me = await Api.getMe();
@@ -102,6 +106,22 @@ const App = {
       this.navigate('login');
       if (window.Toast) Toast.error(err.message || 'Single sign-on failed. Please log in.');
     }
+  },
+
+  // Log out. For users who arrived via StackJunior SSO, send them back to
+  // StackJunior instead of showing the standalone CBT login page. Falls back to
+  // the referring StackJunior page, then to the local login form.
+  logout() {
+    let dest = Auth.getReturnUrl();
+    if (!dest && document.referrer && Auth.isSafeReturnUrl(document.referrer)) {
+      dest = document.referrer;
+    }
+    Auth.clearSession();
+    if (dest) {
+      window.location.href = dest;
+      return;
+    }
+    this.navigate('login');
   }
 };
 
