@@ -28,10 +28,24 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 // ── Security middleware ────────────────────────────────────────
 app.use(helmet());
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true,
-}));
+// Allow any StackJunior origin (so the StackJunior dashboards can call the CBT
+// API — e.g. the student plan card) plus localhost in dev. Extra explicit
+// origins can be added via CORS_ORIGINS (comma-separated).
+const extraOrigins = (process.env.CORS_ORIGINS || '')
+  .split(',').map(s => s.trim()).filter(Boolean);
+const corsOrigin = (origin, cb) => {
+  if (!origin) return cb(null, true); // same-origin / curl / server-to-server
+  if (extraOrigins.includes(origin)) return cb(null, true);
+  try {
+    const host = new URL(origin).hostname;
+    if (host === 'localhost' || host === '127.0.0.1'
+      || host === 'stackjunior.com' || host.endsWith('.stackjunior.com')) {
+      return cb(null, true);
+    }
+  } catch { /* malformed origin */ }
+  return cb(new Error('Not allowed by CORS'));
+};
+app.use(cors({ origin: corsOrigin, credentials: true }));
 
 // ── Rate limiting ──────────────────────────────────────────────
 const limiter = rateLimit({
