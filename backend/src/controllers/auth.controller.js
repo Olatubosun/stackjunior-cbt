@@ -459,17 +459,9 @@ const upsertExternalUser = async (identifier, payload) => {
   let teacherClassId = null;
   if (schoolId && jwt && ['school_admin', 'class_teacher', 'exam_officer'].includes(role)) {
     try {
+      // Classes are few — sync them synchronously so they're ready immediately.
       const classes = await fetchStackjuniorClasses(jwt);
       if (classes) await upsertClassesForSchool(schoolId, classes);
-
-      // Only school/admin types sync the full student roster
-      if (sjType === 'school' || sjType === 'admin') {
-        const students = await fetchStackjuniorStudents(jwt);
-        if (students) {
-          const synced = await upsertStudentsForSchool(schoolId, students);
-          if (synced) console.log(`[stackjunior] synced ${synced} student(s) for school ${schoolId}`);
-        }
-      }
 
       // For teachers, their assigned class id lives in school_admin_class_id
       const teacherExternalClassId =
@@ -479,6 +471,19 @@ const upsertExternalUser = async (identifier, payload) => {
           where: { schoolId, externalId: String(teacherExternalClassId) },
         });
         teacherClassId = teacherClass?.id || null;
+      }
+
+      // The student roster can be hundreds of rows — sync it in the BACKGROUND
+      // so it never blocks the login response (which caused "Signing you in…"
+      // to hang). It refreshes on every admin login, so eventual consistency
+      // is fine.
+      if (sjType === 'school' || sjType === 'admin') {
+        fetchStackjuniorStudents(jwt)
+          .then((students) => (students ? upsertStudentsForSchool(schoolId, students) : 0))
+          .then((synced) => {
+            if (synced) console.log(`[stackjunior] synced ${synced} student(s) for school ${schoolId}`);
+          })
+          .catch((err) => console.error(`[stackjunior] background roster sync failed: ${err.message}`));
       }
     } catch (err) {
       console.error(`[stackjunior] roster sync failed: ${err.message}`);
