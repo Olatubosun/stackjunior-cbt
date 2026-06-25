@@ -72,15 +72,44 @@ const App = {
   // Exchange a StackJunior SSO token for a local CBT session, then land the
   // user on their dashboard. The token is scrubbed from the URL either way so
   // it can't be bookmarked, shared or replayed.
+  // Full-screen blue loader with a pen writing on paper, shown while we sign
+  // the user in / prepare their exams.
+  loaderHtml(message) {
+    return `
+      <div class="cbt-loader">
+        <div class="cbt-loader__paper">
+          <span class="cbt-loader__line cbt-loader__line--1"></span>
+          <span class="cbt-loader__line cbt-loader__line--2"></span>
+          <span class="cbt-loader__line cbt-loader__line--3"></span>
+          <span class="cbt-loader__pen">✏️</span>
+        </div>
+        <p class="cbt-loader__text">${message || 'Preparing your exams…'}</p>
+      </div>
+      <style>
+        .cbt-loader{position:fixed;inset:0;background:#0b2a6b;display:flex;flex-direction:column;
+          align-items:center;justify-content:center;gap:30px;z-index:9999}
+        .cbt-loader__paper{position:relative;width:200px;height:250px;background:#fff;border-radius:10px;
+          box-shadow:0 24px 60px rgba(0,0,0,.4);padding:34px 26px;box-sizing:border-box}
+        .cbt-loader__line{display:block;height:11px;border-radius:6px;background:#d7e0f1;width:0;margin-bottom:23px}
+        .cbt-loader__line--1{animation:cbtL1 4.5s ease-in-out infinite}
+        .cbt-loader__line--2{animation:cbtL2 4.5s ease-in-out infinite}
+        .cbt-loader__line--3{animation:cbtL3 4.5s ease-in-out infinite}
+        .cbt-loader__pen{position:absolute;font-size:28px;line-height:1;animation:cbtPen 4.5s ease-in-out infinite}
+        .cbt-loader__text{color:#cdd8f0;font-size:15px;letter-spacing:.3px;margin:0}
+        @keyframes cbtL1{0%{width:0}22%{width:100%}100%{width:100%}}
+        @keyframes cbtL2{0%,33%{width:0}55%{width:100%}100%{width:100%}}
+        @keyframes cbtL3{0%,66%{width:0}88%{width:100%}100%{width:100%}}
+        @keyframes cbtPen{
+          0%{left:24px;top:26px}22%{left:168px;top:26px}
+          23%,33%{left:24px;top:60px}55%{left:168px;top:60px}
+          56%,66%{left:24px;top:94px}88%{left:168px;top:94px}
+          100%{left:24px;top:26px}}
+      </style>`;
+  },
+
   async handleSso(token, returnUrl) {
     const app = document.getElementById('app');
-    if (app) {
-      app.innerHTML =
-        '<div class="auth-page"><div class="auth-card">' +
-        '<div class="auth-logo"><h1><span>Stack</span>Junior CBT</h1></div>' +
-        '<p style="text-align:center;color:#6B7280">Signing you in…</p>' +
-        '</div></div>';
-    }
+    if (app) app.innerHTML = this.loaderHtml('Signing you in…');
 
     const scrubUrl = () =>
       window.history.replaceState({}, document.title,

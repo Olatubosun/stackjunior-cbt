@@ -13,6 +13,12 @@ const STACKJUNIOR_STUDENTS_URL =
   process.env.STACKJUNIOR_STUDENTS_URL || `${STACKJUNIOR_BASE_URL}/v2/school-admin/students`;
 const STACKJUNIOR_TIMEOUT_MS = Number(process.env.STACKJUNIOR_TIMEOUT_MS || 10000);
 
+// In-memory throttle so a school's (potentially 1000+) student roster isn't
+// re-synced on every admin login — only once per TTL window. Keyed by local
+// school id; resets when the process restarts.
+const lastRosterSync = new Map();
+const ROSTER_SYNC_TTL_MS = Number(process.env.ROSTER_SYNC_TTL_MS || 10 * 60 * 1000);
+
 const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 const signToken = (id) =>
@@ -483,12 +489,19 @@ const upsertExternalUser = async (identifier, payload) => {
       // to hang). It refreshes on every admin login, so eventual consistency
       // is fine.
       if (sjType === 'school' || sjType === 'admin') {
-        fetchStackjuniorStudents(jwt)
-          .then((students) => (students ? upsertStudentsForSchool(schoolId, students) : 0))
-          .then((synced) => {
-            if (synced) console.log(`[stackjunior] synced ${synced} student(s) for school ${schoolId}`);
-          })
-          .catch((err) => console.error(`[stackjunior] background roster sync failed: ${err.message}`));
+        const since = Date.now() - (lastRosterSync.get(schoolId) || 0);
+        if (since >= ROSTER_SYNC_TTL_MS) {
+          lastRosterSync.set(schoolId, Date.now()); // claim up-front to avoid a stampede
+          fetchStackjuniorStudents(jwt)
+            .then((students) => (students ? upsertStudentsForSchool(schoolId, students) : 0))
+            .then((synced) => {
+              if (synced) console.log(`[stackjunior] synced ${synced} student(s) for school ${schoolId}`);
+            })
+            .catch((err) => {
+              lastRosterSync.delete(schoolId); // allow a retry on the next login
+              console.error(`[stackjunior] background roster sync failed: ${err.message}`);
+            });
+        }
       }
     } catch (err) {
       console.error(`[stackjunior] roster sync failed: ${err.message}`);
