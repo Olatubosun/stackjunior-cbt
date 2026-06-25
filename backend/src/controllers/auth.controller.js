@@ -645,6 +645,7 @@ exports.ssoLogin = async (req, res, next) => {
     if (!infoUser) {
       return res.status(401).json({ error: 'Invalid or expired single sign-on session.' });
     }
+    console.log('[sso][debug] infoUser:', JSON.stringify(infoUser)); // TEMP — remove after diagnosing student dedup
 
     const identifier = infoUser.email || infoUser.username || '';
     if (!identifier) {

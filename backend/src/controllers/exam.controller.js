@@ -109,6 +109,8 @@ exports.getReadyExams = async (req, res, next) => {
     }));
 
     const subjects = [...new Set(shaped.map(e => e.subject))].sort();
+    // Don't cache — readiness changes as exams are scheduled/opened/closed.
+    res.set('Cache-Control', 'no-store');
     res.json({ exams: shaped, subjects, count: shaped.length });
   } catch (err) { next(err); }
 };
