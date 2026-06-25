@@ -126,6 +126,8 @@ sequelize
       "ADD COLUMN `username` VARCHAR(255) NULL UNIQUE AFTER `name`");
     await addColumnIfMissing('users', 'classId',
       "ADD COLUMN `classId` CHAR(36) BINARY NULL AFTER `school`");
+    await addColumnIfMissing('users', 'externalId',
+      "ADD COLUMN `externalId` VARCHAR(255) NULL, ADD INDEX `users_externalId` (`externalId`)");
     await addColumnIfMissing('exams', 'classId',
       "ADD COLUMN `classId` CHAR(36) BINARY NULL AFTER `school`");
   })

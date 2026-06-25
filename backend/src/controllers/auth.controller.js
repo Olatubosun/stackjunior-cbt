@@ -305,7 +305,10 @@ const upsertStudentsForSchool = async (schoolId, externalStudents) => {
       || [s.first_name, s.last_name].filter(Boolean).join(' ').trim()
       || usernameLc || emailForLocal.split('@')[0];
 
-    const orClauses = [{ email: emailForLocal }];
+    const externalId = s?.id != null ? String(s.id) : null;
+    const orClauses = [];
+    if (externalId) orClauses.push({ externalId });
+    orClauses.push({ email: emailForLocal });
     if (usernameLc) orClauses.push({ username: usernameLc });
     let user = await User.findOne({ where: { [Op.or]: orClauses } });
 
@@ -315,6 +318,7 @@ const upsertStudentsForSchool = async (schoolId, externalStudents) => {
           name:     displayName,
           email:    emailForLocal,
           username: usernameLc,
+          externalId,
           password: crypto.randomBytes(24).toString('hex'),
           role:     'student',
           school:   schoolId,
@@ -328,6 +332,7 @@ const upsertStudentsForSchool = async (schoolId, externalStudents) => {
       }
     } else {
       const updates = {};
+      if (externalId && !user.externalId)            updates.externalId = externalId;
       if (usernameLc && !user.username)              updates.username = usernameLc;
       if (schoolId   && user.school !== schoolId)    updates.school   = schoolId;
       if (localClassId && user.classId !== localClassId) updates.classId = localClassId;
@@ -490,7 +495,10 @@ const upsertExternalUser = async (identifier, payload) => {
     }
   }
 
-  const orClauses = [{ email: emailForLocal }];
+  const extId = u?.id != null ? String(u.id) : null;
+  const orClauses = [];
+  if (extId)      orClauses.push({ externalId: extId });
+  orClauses.push({ email: emailForLocal });
   if (usernameLc) orClauses.push({ username: usernameLc });
   let user = await User.findOne({ where: { [Op.or]: orClauses } });
 
@@ -504,6 +512,7 @@ const upsertExternalUser = async (identifier, payload) => {
       name:     displayName,
       email:    emailForLocal,
       username: usernameLc,
+      externalId: extId,
       password: crypto.randomBytes(24).toString('hex'),
       role,
       school:   schoolId,
@@ -512,7 +521,8 @@ const upsertExternalUser = async (identifier, payload) => {
     });
   } else {
     const updates = {};
-    if (usernameLc && !user.username)                 updates.username = usernameLc;
+    if (extId      && !user.externalId)                updates.externalId = extId;
+    if (usernameLc && !user.username)                  updates.username = usernameLc;
     if (schoolId   && user.school !== schoolId)        updates.school   = schoolId;
     if (role       && user.role !== role)              updates.role     = role;
     if (displayName && user.name !== displayName)      updates.name     = displayName;
@@ -645,7 +655,6 @@ exports.ssoLogin = async (req, res, next) => {
     if (!infoUser) {
       return res.status(401).json({ error: 'Invalid or expired single sign-on session.' });
     }
-    console.log('[sso][debug] infoUser:', JSON.stringify(infoUser)); // TEMP — remove after diagnosing student dedup
 
     const identifier = infoUser.email || infoUser.username || '';
     if (!identifier) {

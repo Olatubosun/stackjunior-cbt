@@ -40,6 +40,10 @@ const User = sequelize.define('User', {
     ),
     allowNull: false,
   },
+  // StackJunior user id — the stable key for matching the same person across
+  // the roster sync (/students) and SSO (/school/user/info), which otherwise
+  // expose different email/username and would create duplicates.
+  externalId: { type: DataTypes.STRING, allowNull: true },
   school:     { type: DataTypes.UUID, allowNull: true },   // FK → schools.id
   classId:    { type: DataTypes.UUID, allowNull: true },   // FK → classes.id
   class:      { type: DataTypes.STRING, allowNull: true }, // textual label (legacy / display)
