@@ -22,9 +22,14 @@ const TakeExamPage = {
   async init(examId) {
     this._examId = examId;
     try {
-      const data = await Api.startExam(examId);
-      this.exam      = data.exam;
-      this.questions = data.questions;
+      // Start the attempt (creates the Result) and load the exam + questions.
+      const [startRes, examRes] = await Promise.all([
+        Api.startExam(examId),
+        Api.getExam(examId),
+      ]);
+      this._resultId = startRes.result.id;
+      this.exam      = examRes.exam;
+      this.questions = examRes.exam.questions || [];
       this.answers   = {};
       this.timeLeft  = this.exam.duration * 60;
       this.renderExam();
@@ -92,27 +97,16 @@ const TakeExamPage = {
     };
 
     const optionsHTML = () => {
-      if (q.type === 'multiple_choice' && q.options?.length) {
+      // Both multiple-choice and true/false carry options (with stable _id,
+      // which is what the server grades on).
+      if (['multiple_choice', 'true_false'].includes(q.type) && q.options?.length) {
         return `
           <ul class="options-list">
             ${q.options.map(opt => `
-              <li class="option-item" id="opt-${q.id}-${opt.label}"
-                  onclick="TakeExamPage.selectOption('${q.id}','${opt.label}',this)">
-                <span class="option-label">${opt.label}</span>
+              <li class="option-item" id="opt-${q.id}-${opt._id}"
+                  onclick="TakeExamPage.selectOption('${q.id}','${opt._id}',this)">
+                <span class="option-label">${opt.label || ''}</span>
                 <span>${opt.text}</span>
-              </li>
-            `).join('')}
-          </ul>
-        `;
-      }
-      if (q.type === 'true_false') {
-        return `
-          <ul class="options-list">
-            ${['True','False'].map(val => `
-              <li class="option-item" id="opt-${q.id}-${val}"
-                  onclick="TakeExamPage.selectOption('${q.id}','${val}',this)">
-                <span class="option-label">${val[0]}</span>
-                <span>${val}</span>
               </li>
             `).join('')}
           </ul>
@@ -208,7 +202,8 @@ const TakeExamPage = {
         questionId: q.id,
         answer:     this.answers[q.id] || ''
       }));
-      const data = await Api.submitExam(this._examId, { answers });
+      const timeUsed = Math.max(0, this.exam.duration * 60 - this.timeLeft);
+      const data = await Api.submitExam(this._resultId, { answers, timeUsed });
       Helpers.hideSpinner();
       this.showResults(data.result);
     } catch (err) {
@@ -239,12 +234,12 @@ const TakeExamPage = {
               <div style="font-size:12px;color:var(--muted)">Score</div>
             </div>
             <div>
-              <div style="font-size:24px;font-weight:700;color:var(--navy)">${result.totalMarks}</div>
+              <div style="font-size:24px;font-weight:700;color:var(--navy)">${this.exam?.totalMarks ?? ''}</div>
               <div style="font-size:12px;color:var(--muted)">Total Marks</div>
             </div>
             <div>
               <div style="font-size:24px;font-weight:700;color:var(--navy)">
-                ${Helpers.formatDuration(result.timeTaken || 0)}
+                ${Helpers.formatDuration(result.timeUsed || 0)}
               </div>
               <div style="font-size:12px;color:var(--muted)">Time Taken</div>
             </div>

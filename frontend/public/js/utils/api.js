@@ -53,8 +53,8 @@ const Api = (() => {
     createExam:  (body)          => request('POST',   '/exams', body),
     updateExam:  (id, body)      => request('PUT',    `/exams/${id}`, body),
     deleteExam:  (id)            => request('DELETE', `/exams/${id}`),
-    startExam:   (id)            => request('POST',   `/exams/${id}/start`),
-    submitExam:  (id, body)      => request('POST',   `/exams/${id}/submit`, body),
+    startExam:   (examId)         => request('POST',   '/results/start', { examId }),
+    submitExam:  (resultId, body) => request('POST',   `/results/${resultId}/submit`, body),
 
     // ── Results ────────────────────────────────────────────
     getResults:       ()                 => request('GET', '/results'),
