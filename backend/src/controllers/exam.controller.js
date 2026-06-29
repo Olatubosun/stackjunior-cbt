@@ -1,23 +1,39 @@
 const { Op } = require('sequelize');
 const { Exam, Question, User, Class, Result } = require('../models');
 
+// Single source of truth for "exams a student can sit right now": approved /
+// released (published or active) AND inside the open window (open date passed,
+// not yet closed), scoped to the student's school and — when known — class.
+// Shared by the dashboard list (getExams) and the readiness feed
+// (getReadyExams) so the two can never disagree.
+const studentReadyWhere = (user) => {
+  const now = new Date();
+  const where = {
+    school: user.school,
+    status: { [Op.in]: ['published', 'active'] },
+    [Op.and]: [
+      { [Op.or]: [{ scheduledStart: null }, { scheduledStart: { [Op.lte]: now } }] },
+      { [Op.or]: [{ scheduledEnd:   null }, { scheduledEnd:   { [Op.gte]: now } }] },
+    ],
+  };
+  if (user.classId) where.classId = user.classId;
+  return where;
+};
+
 exports.getExams = async (req, res, next) => {
   try {
-    const where = {};
+    let where = {};
     const include = [
       { model: User,  as: 'creator',     attributes: ['id', 'name'] },
       { model: Class, as: 'classRecord', attributes: ['id', 'name'] },
     ];
 
     if (req.user.role === 'student') {
-      // Students: strictly scoped to their school; class filter applied only
-      // when the student has a classId (falls back to school-wide otherwise)
+      // Students: the exams they can sit now (same rule as the readiness feed).
       if (!req.user.school) {
         return res.json({ exams: [], count: 0 });
       }
-      where.school = req.user.school;
-      if (req.user.classId) where.classId = req.user.classId;
-      where.status = { [Op.in]: ['active', 'closed'] };
+      where = studentReadyWhere(req.user);
     } else {
       // Teachers / admins: their school's exams
       if (req.user.school) where.school = req.user.school;
@@ -48,26 +64,9 @@ exports.getExams = async (req, res, next) => {
  */
 exports.getReadyExams = async (req, res, next) => {
   try {
-    const u   = req.user;
-    const now = new Date();
-
-    const where = {
-      status: { [Op.in]: ['published', 'active'] },
-      [Op.and]: [
-        { [Op.or]: [{ scheduledStart: null }, { scheduledStart: { [Op.lte]: now } }] },
-        { [Op.or]: [{ scheduledEnd:   null }, { scheduledEnd:   { [Op.gte]: now } }] },
-      ],
-    };
-
-    if (u.role === 'student') {
-      if (!u.school) return res.json({ exams: [], subjects: [], count: 0 });
-      where.school = u.school;
-      if (u.classId) where.classId = u.classId;
-    } else if (u.school) {
-      where.school = u.school;
-    } else {
-      return res.json({ exams: [], subjects: [], count: 0 });
-    }
+    const u = req.user;
+    if (!u.school) return res.json({ exams: [], subjects: [], count: 0 });
+    const where = studentReadyWhere(u);
 
     const exams = await Exam.findAll({
       where,
