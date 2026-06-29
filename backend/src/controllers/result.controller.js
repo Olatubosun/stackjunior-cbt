@@ -1,15 +1,51 @@
 const { Result, Exam, Question, Answer, User } = require('../models');
 
+// Resolve a stored option _id (what MC / true-false answers store) to a
+// readable "Label. text"; leaves free-text answers untouched.
+const optText = (q, val) => {
+  if (!q || !Array.isArray(q.options) || !q.options.length) return val;
+  const opt = q.options.find((o) => o._id === val);
+  return opt ? `${opt.label ? opt.label + '. ' : ''}${opt.text}` : val;
+};
+
+// Shape a Result for the frontend: expose `exam`/`student` (not the raw
+// association aliases), surface the exam's totalMarks, and make answers
+// human-readable (student/correct answers resolved from option ids).
+const shapeResult = (r) => {
+  const j = r.toJSON ? r.toJSON() : r;
+  const exam = j.examRecord || null;
+  return {
+    ...j,
+    exam,
+    student: j.studentUser || null,
+    totalMarks: exam ? exam.totalMarks : null,
+    answers: (j.answers || []).map((a) => {
+      const q = a.question || null;
+      const correctVal = q && (q.correctAnswer || ((q.options || []).find((o) => o.isCorrect) || {})._id);
+      return {
+        ...a,
+        maxMarks: (q && q.markingGuide && q.markingGuide.maxMarks) || 1,
+        studentAnswer: optText(q, a.studentAnswer),
+        question: q ? {
+          id: q.id, type: q.type, questionText: q.questionText,
+          correctAnswer: optText(q, correctVal),
+        } : null,
+      };
+    }),
+  };
+};
+
 // GET /api/results  — list results relevant to the logged-in user
 exports.listResults = async (req, res, next) => {
   try {
     if (req.user.role === 'student') {
       const results = await Result.findAll({
         where: { student: req.user.id },
-        include: [{ model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject'] }],
+        include: [{ model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks'] }],
         order: [['createdAt', 'DESC']],
       });
-      return res.json({ results, count: results.length });
+      const shaped = results.map(shapeResult);
+      return res.json({ results: shaped, count: shaped.length });
     }
     // Teachers / admins: all results within their school
     const results = await Result.findAll({
@@ -20,11 +56,12 @@ exports.listResults = async (req, res, next) => {
           attributes: ['id', 'name', 'examNumber', 'class', 'school'],
           where: req.user.school ? { school: req.user.school } : undefined,
         },
-        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject'] },
+        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks'] },
       ],
       order: [['createdAt', 'DESC']],
     });
-    res.json({ results, count: results.length });
+    const shaped = results.map(shapeResult);
+    res.json({ results: shaped, count: shaped.length });
   } catch (err) { next(err); }
 };
 
@@ -130,6 +167,28 @@ exports.getMyResults = async (req, res, next) => {
       order: [['createdAt', 'DESC']],
     });
     res.json({ results });
+  } catch (err) { next(err); }
+};
+
+// GET /api/results/:id  — full result detail (summary + answers + questions)
+exports.getResult = async (req, res, next) => {
+  try {
+    const result = await Result.findByPk(req.params.id, {
+      include: [
+        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks', 'passMark'] },
+        { model: User, as: 'studentUser', attributes: ['id', 'name', 'examNumber', 'class', 'school'] },
+        { model: Answer, as: 'answers', include: [{ model: Question, as: 'question' }] },
+      ],
+    });
+    if (!result) return res.status(404).json({ error: 'Result not found.' });
+
+    const u = req.user;
+    if (u.role === 'student') {
+      if (result.student !== u.id) return res.status(403).json({ error: 'Not authorised.' });
+    } else if (u.school && result.studentUser?.school && u.school !== result.studentUser.school) {
+      return res.status(403).json({ error: 'Forbidden — result belongs to another school.' });
+    }
+    res.json({ result: shapeResult(result) });
   } catch (err) { next(err); }
 };
 
