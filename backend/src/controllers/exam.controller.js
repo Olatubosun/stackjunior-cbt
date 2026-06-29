@@ -24,8 +24,9 @@ exports.getExams = async (req, res, next) => {
   try {
     let where = {};
     const include = [
-      { model: User,  as: 'creator',     attributes: ['id', 'name'] },
-      { model: Class, as: 'classRecord', attributes: ['id', 'name'] },
+      { model: User,     as: 'creator',     attributes: ['id', 'name'] },
+      { model: Class,    as: 'classRecord', attributes: ['id', 'name'] },
+      { model: Question, as: 'questions',   attributes: ['id'], through: { attributes: [] } },
     ];
 
     if (req.user.role === 'student') {
