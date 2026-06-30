@@ -73,7 +73,7 @@ const ResultDetailPage = {
               </span>
             </div>
           </div>
-          ${Auth.isTeacher() && r.status === 'teacher_reviewed' ? `
+          ${Auth.isTeacher() && r.status !== 'released' ? `
             <div>
               <div class="form-group" style="margin-bottom:10px">
                 <label>General Comment (optional)</label>

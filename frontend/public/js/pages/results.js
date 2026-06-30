@@ -19,11 +19,10 @@ const ResultsPage = {
         ${Auth.isTeacher() ? `
           <!-- Status filter tabs for teacher -->
           <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-            <button class="btn btn-primary btn-sm" onclick="ResultsPage.filter('all')"        id="f-all">All</button>
-            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('pending')"    id="f-pending">Pending</button>
-            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('ai_marked')"  id="f-ai">AI Marked</button>
-            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('teacher_reviewed')" id="f-reviewed">Reviewed</button>
-            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('released')"   id="f-released">Released</button>
+            <button class="btn btn-primary btn-sm" onclick="ResultsPage.filter('all')"       id="f-all">All</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('submitted')" id="f-submitted">Submitted</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('marked')"    id="f-marked">Marked</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('released')"  id="f-released">Released</button>
           </div>
         ` : ''}
 
@@ -58,9 +57,9 @@ const ResultsPage = {
 
   filter(status) {
     this._filter = status;
-    ['all','pending','ai','reviewed','released'].forEach(k => {
+    ['all','submitted','marked','released'].forEach(k => {
       const btn = document.getElementById(`f-${k}`);
-      if (btn) btn.className = 'btn btn-sm ' + (k === status || (k === 'ai' && status === 'ai_marked') ? 'btn-primary' : 'btn-outline');
+      if (btn) btn.className = 'btn btn-sm ' + (k === status ? 'btn-primary' : 'btn-outline');
     });
     this.renderList();
   },
@@ -125,7 +124,7 @@ const ResultsPage = {
                           onclick="App.navigate('result-detail','${r.id}')">
                     ${Auth.isTeacher() ? 'Review' : 'View'}
                   </button>
-                  ${Auth.isTeacher() && r.status === 'teacher_reviewed' ? `
+                  ${Auth.isTeacher() && r.status !== 'released' ? `
                     <button class="btn btn-green btn-sm"
                             onclick="ResultsPage.release('${r.id}')">Release</button>
                   ` : ''}

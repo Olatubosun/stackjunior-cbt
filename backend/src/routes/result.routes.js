@@ -9,6 +9,7 @@ router.post('/:id/submit',        authorise('student'), ctrl.submitExam);
 router.get('/my',                 authorise('student'), ctrl.getMyResults);
 router.get('/exam/:examId',       authorise('super_admin','school_admin','exam_officer','subject_teacher','class_teacher'), ctrl.getExamResults);
 router.get('/:id',                ctrl.getResult); // after /my and /exam/:examId so it doesn't shadow them
+router.patch('/:id/answers/:answerId', authorise('class_teacher','subject_teacher','school_admin','exam_officer','super_admin'), ctrl.markAnswer);
 router.patch('/:id/release',      authorise('class_teacher','school_admin','exam_officer'), ctrl.releaseResult);
 
 module.exports = router;

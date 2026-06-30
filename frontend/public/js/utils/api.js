@@ -59,8 +59,8 @@ const Api = (() => {
     // ── Results ────────────────────────────────────────────
     getResults:       ()                 => request('GET', '/results'),
     getResult:        (id)               => request('GET', `/results/${id}`),
-    markAnswer:       (rid, aid, body)   => request('PUT', `/results/${rid}/answers/${aid}`, body),
-    releaseResult:    (id, body)         => request('PUT', `/results/${id}/release`, body),
+    markAnswer:       (rid, aid, body)   => request('PATCH', `/results/${rid}/answers/${aid}`, body),
+    releaseResult:    (id, body)         => request('PATCH', `/results/${id}/release`, body),
     getExamAnalytics: (examId)           => request('GET', `/results/exam/${examId}/analytics`),
 
     // ── Schools / Classes ──────────────────────────────────

@@ -19,6 +19,7 @@ const shapeResult = (r) => {
     exam,
     student: j.studentUser || null,
     totalMarks: exam ? exam.totalMarks : null,
+    teacherComment: j.teacherFeedback || null,
     answers: (j.answers || []).map((a) => {
       const q = a.question || null;
       const correctVal = q && (q.correctAnswer || ((q.options || []).find((o) => o.isCorrect) || {})._id);
@@ -208,19 +209,66 @@ exports.getExamResults = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// PATCH /api/results/:id/answers/:answerId  — teacher marks a (theory) answer
+exports.markAnswer = async (req, res, next) => {
+  try {
+    const { teacherMark, teacherComment } = req.body;
+    const answer = await Answer.findByPk(req.params.answerId);
+    if (!answer || answer.resultId !== req.params.id) {
+      return res.status(404).json({ error: 'Answer not found for this result.' });
+    }
+
+    const updates = {};
+    if (teacherMark !== undefined && teacherMark !== null && teacherMark !== '') {
+      const m = Number(teacherMark);
+      updates.teacherMark   = m;
+      updates.marksAwarded  = m;          // teacher mark overrides the auto mark
+      updates.isCorrect     = m > 0;
+      updates.flagged       = false;
+    }
+    if (teacherComment !== undefined) updates.teacherComment = teacherComment;
+    await answer.update(updates);
+
+    // Recompute the result total from all answers' awarded marks.
+    const result = await Result.findByPk(req.params.id, {
+      include: [
+        { model: Answer, as: 'answers' },
+        { model: Exam,   as: 'examRecord', attributes: ['totalMarks', 'passMark'] },
+      ],
+    });
+    const totalScore = (result.answers || []).reduce((s, a) => s + (a.marksAwarded || 0), 0);
+    const totalMarks = result.examRecord?.totalMarks || 0;
+    const percentage = totalMarks ? Math.round((totalScore / totalMarks) * 100) : 0;
+    await result.update({
+      totalScore,
+      percentage,
+      passed: totalMarks ? percentage >= (result.examRecord?.passMark || 40) : false,
+      grade:  calcGrade(percentage),
+      status: result.status === 'released' ? 'released' : 'marked',
+    });
+
+    const full = await Result.findByPk(req.params.id, {
+      include: [
+        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks', 'passMark'] },
+        { model: User, as: 'studentUser', attributes: ['id', 'name', 'examNumber', 'class', 'school'] },
+        { model: Answer, as: 'answers', include: [{ model: Question, as: 'question' }] },
+      ],
+    });
+    res.json({ result: shapeResult(full) });
+  } catch (err) { next(err); }
+};
+
 // PATCH /api/results/:id/release  — teacher/class teacher releases result
 exports.releaseResult = async (req, res, next) => {
   try {
-    const { teacherFeedback, classTeacherNote } = req.body;
+    const { teacherFeedback, teacherComment, classTeacherNote } = req.body;
     const result = await Result.findByPk(req.params.id);
     if (!result) return res.status(404).json({ error: 'Result not found.' });
-    await result.update({
-      status: 'released',
-      releasedAt: new Date(),
-      releasedBy: req.user.id,
-      teacherFeedback,
-      classTeacherNote,
-    });
+    const updates = { status: 'released', releasedAt: new Date(), releasedBy: req.user.id };
+    const fb = teacherFeedback ?? teacherComment; // detail page sends teacherComment
+    if (fb !== undefined) updates.teacherFeedback = fb;
+    if (classTeacherNote !== undefined) updates.classTeacherNote = classTeacherNote;
+    await result.update(updates);
     res.json({ result, message: 'Result released.' });
   } catch (err) { next(err); }
 };
