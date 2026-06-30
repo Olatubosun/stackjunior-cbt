@@ -294,62 +294,89 @@ const upsertStudentsForSchool = async (schoolId, externalStudents) => {
       .map(c => [String(c.externalId), c.id])
   );
 
-  let synced = 0;
+  // ── 1. Normalise every roster row once (no DB calls) ──────────
+  const prepared = [];
   for (const s of externalStudents) {
     const usernameLc = s?.username ? String(s.username).toLowerCase() : null;
     const realEmail  = s?.email && isEmail(s.email) ? s.email.toLowerCase() : null;
     if (!usernameLc && !realEmail) continue;
-
-    const emailForLocal = realEmail || `${usernameLc}@stackjunior.local`;
-
-    // Resolve class
+    const emailForLocal   = realEmail || `${usernameLc}@stackjunior.local`;
     const externalClassId = String(s.school_class_id ?? s.class?.id ?? '').trim();
     const localClassId    = externalClassId ? classMap.get(externalClassId) || null : null;
-
     const displayName =
       s.name || s.full_name
       || [s.first_name, s.last_name].filter(Boolean).join(' ').trim()
       || usernameLc || emailForLocal.split('@')[0];
-
     const externalId = s?.id != null ? String(s.id) : null;
-    const orClauses = [];
-    if (externalId) orClauses.push({ externalId });
-    orClauses.push({ email: emailForLocal });
-    if (usernameLc) orClauses.push({ username: usernameLc });
-    let user = await User.findOne({ where: { [Op.or]: orClauses } });
+    prepared.push({ usernameLc, emailForLocal, localClassId, displayName, externalId });
+  }
+  if (!prepared.length) return 0;
 
-    if (!user) {
-      try {
-        await User.create({
-          name:     displayName,
-          email:    emailForLocal,
-          username: usernameLc,
-          externalId,
-          password: crypto.randomBytes(24).toString('hex'),
-          role:     'student',
-          school:   schoolId,
-          classId:  localClassId,
-          isActive: true,
-        });
-        synced++;
-      } catch (err) {
-        // Unique-constraint clashes (e.g. duplicate synthetic email) — skip
-        console.error(`[stackjunior] sync student ${usernameLc}: ${err.message}`);
-      }
+  // ── 2. One query to load every already-existing match ─────────
+  const extIds    = [...new Set(prepared.map(p => p.externalId).filter(Boolean))];
+  const emails    = [...new Set(prepared.map(p => p.emailForLocal))];
+  const usernames = [...new Set(prepared.map(p => p.usernameLc).filter(Boolean))];
+  const matchOr = [];
+  if (extIds.length)    matchOr.push({ externalId: { [Op.in]: extIds } });
+  if (emails.length)    matchOr.push({ email:      { [Op.in]: emails } });
+  if (usernames.length) matchOr.push({ username:   { [Op.in]: usernames } });
+  const existing = matchOr.length ? await User.findAll({ where: { [Op.or]: matchOr } }) : [];
+  const byExt = new Map(), byEmail = new Map(), byUser = new Map();
+  for (const u of existing) {
+    if (u.externalId) byExt.set(String(u.externalId), u);
+    if (u.email)      byEmail.set(u.email.toLowerCase(), u);
+    if (u.username)   byUser.set(u.username.toLowerCase(), u);
+  }
+
+  // ── 3. Classify into bulk-inserts vs targeted updates ─────────
+  const toCreate = [];
+  const updates  = [];
+  const claimed  = new Set(); // de-dupe new rows within this batch
+  for (const p of prepared) {
+    const user = (p.externalId && byExt.get(p.externalId))
+      || byEmail.get(p.emailForLocal)
+      || (p.usernameLc && byUser.get(p.usernameLc));
+    if (user) {
+      const u = {};
+      if (p.externalId && !user.externalId)                  u.externalId = p.externalId;
+      if (p.usernameLc && !user.username)                    u.username   = p.usernameLc;
+      if (schoolId && user.school !== schoolId)              u.school     = schoolId;
+      if (p.localClassId && user.classId !== p.localClassId) u.classId    = p.localClassId;
+      if (user.role !== 'student' && !['school_admin', 'super_admin'].includes(user.role))
+        u.role = 'student';
+      if (p.displayName && user.name !== p.displayName)      u.name       = p.displayName;
+      if (Object.keys(u).length) updates.push({ user, u });
     } else {
-      const updates = {};
-      if (externalId && !user.externalId)            updates.externalId = externalId;
-      if (usernameLc && !user.username)              updates.username = usernameLc;
-      if (schoolId   && user.school !== schoolId)    updates.school   = schoolId;
-      if (localClassId && user.classId !== localClassId) updates.classId = localClassId;
-      if (user.role !== 'student' && !['school_admin','super_admin'].includes(user.role))
-        updates.role = 'student';
-      if (displayName && user.name !== displayName)  updates.name     = displayName;
-      if (Object.keys(updates).length) {
-        try { await user.update(updates); synced++; }
-        catch (err) { console.error(`[stackjunior] update student ${usernameLc}: ${err.message}`); }
-      }
+      if (claimed.has(p.emailForLocal) || (p.usernameLc && claimed.has(p.usernameLc))) continue;
+      claimed.add(p.emailForLocal);
+      if (p.usernameLc) claimed.add(p.usernameLc);
+      toCreate.push({
+        name: p.displayName, email: p.emailForLocal, username: p.usernameLc,
+        externalId: p.externalId, password: crypto.randomBytes(24).toString('hex'),
+        role: 'student', school: schoolId, classId: p.localClassId, isActive: true,
+      });
     }
+  }
+
+  // ── 4. Bulk-insert new students in chunks (INSERT IGNORE) ─────
+  // Note: bulkCreate skips the password-hash hook; that's fine — these are
+  // SSO-only accounts with a random, unusable local password.
+  let synced = 0;
+  for (let i = 0; i < toCreate.length; i += 500) {
+    try {
+      const created = await User.bulkCreate(toCreate.slice(i, i + 500), {
+        validate: true, ignoreDuplicates: true,
+      });
+      synced += created.length;
+    } catch (err) {
+      console.error(`[stackjunior] bulk create students: ${err.message}`);
+    }
+  }
+
+  // ── 5. Apply the (usually few) updates ────────────────────────
+  for (const { user, u } of updates) {
+    try { await user.update(u); synced++; }
+    catch (err) { console.error(`[stackjunior] update student ${user.username}: ${err.message}`); }
   }
   return synced;
 };
