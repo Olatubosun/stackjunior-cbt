@@ -51,5 +51,7 @@ const Auth = (() => {
     isTeacher()  { return this.hasRole('subject_teacher', 'class_teacher', 'exam_officer', 'school_admin', 'super_admin'); },
     isStudent()  { return this.hasRole('student'); },
     isAdmin()    { return this.hasRole('school_admin', 'super_admin'); },
+    // Only exam officers and admins approve/publish exams.
+    canPublish() { return this.hasRole('exam_officer', 'school_admin', 'super_admin'); },
   };
 })();

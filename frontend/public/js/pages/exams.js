@@ -80,7 +80,7 @@ const ExamsPage = {
                     <td>
                       <button class="btn btn-outline btn-sm"
                               onclick="App.navigate('create-exam','${ex.id}')">Edit</button>
-                      ${ex.status === 'draft' ? `
+                      ${ex.status === 'draft' && Auth.canPublish() ? `
                         <button class="btn btn-green btn-sm"
                                 onclick="ExamsPage.publish('${ex.id}')">Publish</button>
                       ` : ''}
@@ -111,7 +111,7 @@ const ExamsPage = {
 
   async publish(id) {
     try {
-      await Api.updateExam(id, { status: 'active' });
+      await Api.publishExam(id);
       Toast.success('Exam published and now available to students');
       this.load();
     } catch (err) {
