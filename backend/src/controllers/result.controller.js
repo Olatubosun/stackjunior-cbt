@@ -113,28 +113,49 @@ exports.submitExam = async (req, res, next) => {
     });
     if (!exam) return res.status(404).json({ error: 'Exam not found.' });
 
+    // Normalise a free-text answer for comparison.
+    const norm = (s) => String(s ?? '')
+      .trim().toLowerCase()
+      .replace(/\s+/g, ' ')
+      .replace(/[.!?;:,]+$/, '');
+
     let totalScore = 0;
     const rows = [];
 
     for (const ans of answers) {
       const q = exam.questions.find(q => q.id === ans.questionId);
       if (!q) continue;
+      const maxMarks = q.markingGuide?.maxMarks || 1;
       let correct = false;
       let marks   = 0;
+      let flagged = false;
 
       if (['multiple_choice', 'true_false'].includes(q.type)) {
         const correctOpt = (q.options || []).find(o => o.isCorrect);
-        correct = correctOpt?._id === ans.answer;
-        marks   = correct ? (q.markingGuide?.maxMarks || 1) : 0;
-        totalScore += marks;
+        correct = !!correctOpt && correctOpt._id === ans.answer;
+        marks   = correct ? maxMarks : 0;
+      } else if (['fill_blank', 'short_answer'].includes(q.type)) {
+        // Accept any answer listed in correctAnswer (separated by | / ; or ,).
+        const accepted = String(q.correctAnswer ?? '')
+          .split(/[|/;,]/).map(norm).filter(Boolean);
+        const given = norm(ans.answer);
+        correct = !!given && accepted.includes(given);
+        marks   = correct ? maxMarks : 0;
+        // Short answers may have valid variants — flag a miss for teacher review.
+        if (!correct && given && q.type === 'short_answer') flagged = true;
+      } else {
+        // theory / essay — needs manual (or AI) marking
+        flagged = !!(ans.answer && String(ans.answer).trim());
       }
 
+      totalScore += marks;
       rows.push({
         resultId:      result.id,
         questionId:    q.id,
         studentAnswer: ans.answer,
         isCorrect:     correct,
         marksAwarded:  marks,
+        flagged,
       });
     }
 
