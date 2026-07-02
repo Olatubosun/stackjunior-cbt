@@ -2,7 +2,7 @@ const router = require('express').Router();
 const ctrl   = require('../controllers/ai.controller');
 const { protect, authorise } = require('../middleware/auth.middleware');
 
-const teachers = ['super_admin','school_admin','exam_officer','subject_teacher'];
+const teachers = ['super_admin','school_admin','exam_officer','subject_teacher','class_teacher'];
 
 router.use(protect);
 
