@@ -294,6 +294,7 @@ const AiGeneratePage = {
     Navbar.setActive('ai-generate');
     this.generatedQuestions = [];
     this._selectedQuestions = new Set();
+    this._editing = new Set();
     this._externalMode = false;
     // Defer until after innerHTML mounts
     setTimeout(() => {
@@ -561,6 +562,7 @@ const AiGeneratePage = {
       this.generatedQuestions = data.questions || [];
       // Default: all questions selected
       this._selectedQuestions = new Set(this.generatedQuestions.map((_, i) => i));
+      this._editing = new Set();
       if (!this.generatedQuestions.length) {
         Toast.warning('No questions were generated. Try a different prompt.');
         return;
@@ -615,7 +617,19 @@ const AiGeneratePage = {
         ` : ''}
       </div>`;
 
-    Helpers.setHTML('generated-list', toolbar + this.generatedQuestions.map((q, i) => `
+    Helpers.setHTML('generated-list', toolbar + this.generatedQuestions.map((q, i) =>
+      this._editing.has(i) ? this._editCard(q, i, typeLabel) : this._viewCard(q, i, typeLabel)
+    ).join(''));
+  },
+
+  // Escape a value for safe use in HTML attributes / textareas.
+  esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  },
+
+  _viewCard(q, i, typeLabel) {
+    return `
       <div style="border:1.5px solid var(--border);border-radius:8px;padding:18px;margin-bottom:12px;${this._selectedQuestions.has(i) ? '' : 'opacity:0.55'}">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
           <div style="display:flex;align-items:center;gap:10px">
@@ -626,16 +640,19 @@ const AiGeneratePage = {
             <span class="badge badge-blue">${typeLabel[q.type] || q.type}</span>
             <span class="badge badge-grey">${q.marks || 1} mark${q.marks > 1 ? 's' : ''}</span>
           </div>
-          <button class="btn btn-danger btn-sm" onclick="AiGeneratePage.removeQuestion(${i})">Remove</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-outline btn-sm" onclick="AiGeneratePage.editQuestion(${i})">Edit</button>
+            <button class="btn btn-danger btn-sm" onclick="AiGeneratePage.removeQuestion(${i})">Remove</button>
+          </div>
         </div>
         <p style="font-size:15px;font-weight:600;color:var(--navy);margin-bottom:10px">
-          ${q.questionText}
+          ${this.esc(q.questionText)}
         </p>
         ${q.options?.length ? `
           <ul style="list-style:none;padding:0;margin:0 0 10px">
             ${q.options.map(o => `
               <li style="padding:4px 0;font-size:14px;color:${o.label === q.correctAnswer ? 'var(--green)' : 'var(--text)'}">
-                <strong>${o.label}.</strong> ${o.text}
+                <strong>${o.label}.</strong> ${this.esc(o.text)}
                 ${o.label === q.correctAnswer ? ' <strong>(Correct)</strong>' : ''}
               </li>
             `).join('')}
@@ -643,32 +660,163 @@ const AiGeneratePage = {
         ` : ''}
         ${q.correctAnswer && q.type !== 'multiple_choice' ? `
           <p style="font-size:13px;color:var(--green);margin-bottom:6px">
-            <strong>Answer:</strong> ${q.correctAnswer}
+            <strong>Answer:</strong> ${this.esc(q.correctAnswer)}
           </p>
         ` : ''}
         ${q.explanation ? `
           <p style="font-size:13px;color:var(--muted);background:var(--light-bg);padding:8px;border-radius:6px">
-            <strong>Explanation:</strong> ${q.explanation}
+            <strong>Explanation:</strong> ${this.esc(q.explanation)}
           </p>
         ` : ''}
         ${q.markingGuide?.modelAnswer ? `
           <div style="font-size:13px;color:var(--muted);margin-top:8px">
-            <strong>Model Answer:</strong> ${Helpers.truncate(q.markingGuide.modelAnswer, 120)}
+            <strong>Model Answer:</strong> ${this.esc(Helpers.truncate(q.markingGuide.modelAnswer, 120))}
           </div>
         ` : ''}
-      </div>
-    `).join(''));
+      </div>`;
+  },
+
+  _editCard(q, i, typeLabel) {
+    const optionTypes = ['multiple_choice', 'true_false'];
+    return `
+      <div style="border:1.5px solid var(--blue);border-radius:8px;padding:18px;margin-bottom:12px;background:var(--light-blue)">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+          <span style="font-weight:700;color:var(--navy)">Editing Question ${i + 1}</span>
+          <button class="btn btn-green btn-sm" onclick="AiGeneratePage.doneEditing(${i})">Done</button>
+        </div>
+
+        <div class="form-group">
+          <label>Question</label>
+          <textarea rows="3" style="width:100%"
+            oninput="AiGeneratePage.updateField(${i},'questionText',this.value)">${this.esc(q.questionText)}</textarea>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label>Type</label>
+            <select onchange="AiGeneratePage.changeType(${i}, this.value)">
+              ${['multiple_choice', 'true_false', 'fill_blank', 'short_answer', 'theory', 'essay']
+                .map(t => `<option value="${t}" ${q.type === t ? 'selected' : ''}>${typeLabel[t] || t}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Marks</label>
+            <input type="number" min="1" value="${q.marks || 1}"
+              onchange="AiGeneratePage.updateField(${i},'marks',parseInt(this.value)||1)" />
+          </div>
+        </div>
+
+        ${optionTypes.includes(q.type) ? `
+          <div class="form-group">
+            <label>Options — pick the correct answer</label>
+            ${(q.options || []).map((o, oi) => `
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+                <input type="radio" name="correct-${i}" ${o.label === q.correctAnswer ? 'checked' : ''}
+                       onchange="AiGeneratePage.setCorrect(${i},'${o.label}')" style="cursor:pointer" title="Mark correct" />
+                <span style="font-weight:700;width:20px">${o.label}.</span>
+                <input type="text" value="${this.esc(o.text)}" style="flex:1"
+                       oninput="AiGeneratePage.updateOption(${i},${oi},'text',this.value)" />
+                <button class="btn btn-danger btn-sm" onclick="AiGeneratePage.removeOption(${i},${oi})"
+                        style="padding:4px 8px">&times;</button>
+              </div>
+            `).join('')}
+            <button class="btn btn-outline btn-sm" onclick="AiGeneratePage.addOption(${i})"
+                    style="margin-top:4px">+ Add option</button>
+          </div>
+        ` : `
+          <div class="form-group">
+            <label>Correct Answer</label>
+            <input type="text" value="${this.esc(q.correctAnswer)}"
+                   oninput="AiGeneratePage.updateField(${i},'correctAnswer',this.value)" />
+          </div>
+        `}
+
+        <div class="form-group">
+          <label>Explanation</label>
+          <textarea rows="2" style="width:100%"
+            oninput="AiGeneratePage.updateField(${i},'explanation',this.value)">${this.esc(q.explanation)}</textarea>
+        </div>
+
+        ${['theory', 'essay', 'short_answer'].includes(q.type) ? `
+          <div class="form-group">
+            <label>Model Answer (for marking)</label>
+            <textarea rows="3" style="width:100%"
+              oninput="AiGeneratePage.updateMarkingGuide(${i},'modelAnswer',this.value)">${this.esc(q.markingGuide?.modelAnswer)}</textarea>
+          </div>
+        ` : ''}
+      </div>`;
+  },
+
+  editQuestion(i) { this._editing.add(i); this.renderGenerated(); },
+  doneEditing(i) { this._editing.delete(i); this.renderGenerated(); },
+
+  updateField(i, field, value) { if (this.generatedQuestions[i]) this.generatedQuestions[i][field] = value; },
+
+  updateMarkingGuide(i, field, value) {
+    const q = this.generatedQuestions[i];
+    if (!q) return;
+    q.markingGuide = q.markingGuide || {};
+    q.markingGuide[field] = value;
+  },
+
+  updateOption(i, oi, field, value) {
+    const opt = this.generatedQuestions[i]?.options?.[oi];
+    if (opt) opt[field] = value;
+  },
+
+  setCorrect(i, label) {
+    const q = this.generatedQuestions[i];
+    if (!q) return;
+    q.correctAnswer = label;
+    (q.options || []).forEach(o => { o.isCorrect = (o.label === label); });
+  },
+
+  changeType(i, type) {
+    const q = this.generatedQuestions[i];
+    if (!q) return;
+    q.type = type;
+    if (type === 'true_false') {
+      q.options = [
+        { label: 'A', text: 'True',  isCorrect: q.correctAnswer === 'A' },
+        { label: 'B', text: 'False', isCorrect: q.correctAnswer === 'B' },
+      ];
+    } else if (type === 'multiple_choice' && !(q.options && q.options.length)) {
+      q.options = ['A', 'B', 'C', 'D'].map(l => ({ label: l, text: '', isCorrect: false }));
+    }
+    this.renderGenerated();
+  },
+
+  addOption(i) {
+    const q = this.generatedQuestions[i];
+    if (!q) return;
+    q.options = q.options || [];
+    q.options.push({ label: String.fromCharCode(65 + q.options.length), text: '', isCorrect: false });
+    this.renderGenerated();
+  },
+
+  removeOption(i, oi) {
+    const q = this.generatedQuestions[i];
+    if (!q?.options) return;
+    q.options.splice(oi, 1);
+    q.options.forEach((o, idx) => { o.label = String.fromCharCode(65 + idx); });
+    const correct = q.options.find(o => o.isCorrect);
+    q.correctAnswer = correct ? correct.label : '';
+    this.renderGenerated();
   },
 
   removeQuestion(index) {
     this.generatedQuestions.splice(index, 1);
-    // Re-index the selection set
-    const newSel = new Set();
-    for (const i of this._selectedQuestions) {
-      if (i < index) newSel.add(i);
-      else if (i > index) newSel.add(i - 1);
-    }
-    this._selectedQuestions = newSel;
+    // Re-index the selection + editing sets around the removed item
+    const reindex = (set) => {
+      const out = new Set();
+      for (const i of set) {
+        if (i < index) out.add(i);
+        else if (i > index) out.add(i - 1);
+      }
+      return out;
+    };
+    this._selectedQuestions = reindex(this._selectedQuestions);
+    this._editing = reindex(this._editing);
     if (this.generatedQuestions.length === 0) {
       document.getElementById('generated-section').style.display = 'none';
     } else {
@@ -679,6 +827,7 @@ const AiGeneratePage = {
   clearGenerated() {
     this.generatedQuestions = [];
     this._selectedQuestions = new Set();
+    this._editing = new Set();
     this._externalMode = false;
     document.getElementById('generated-section').style.display = 'none';
   },

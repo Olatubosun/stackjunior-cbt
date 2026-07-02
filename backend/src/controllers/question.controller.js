@@ -1,5 +1,19 @@
+const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { Question, User } = require('../models');
+
+// Ensure MC/true-false options carry a stable _id and an isCorrect flag — the
+// grader matches the chosen option by _id, so AI-generated options (which only
+// have a label + correctAnswer) would otherwise never grade correctly.
+const ensureOptionIds = (q) => {
+  if (!Array.isArray(q.options) || !q.options.length) return q;
+  const options = q.options.map((o) => ({
+    ...o,
+    _id: o._id || crypto.randomUUID(),
+    isCorrect: o.isCorrect != null ? o.isCorrect : (!!o.label && o.label === q.correctAnswer),
+  }));
+  return { ...q, options };
+};
 
 // GET /api/questions
 exports.getQuestions = async (req, res, next) => {
@@ -72,7 +86,7 @@ exports.bulkCreateQuestions = async (req, res, next) => {
     if (!list.length) return res.status(400).json({ error: 'No questions provided.' });
     const saved = await Question.bulkCreate(
       list.map(q => ({
-        ...q,
+        ...ensureOptionIds(q),
         type:       normaliseType(q.type),
         difficulty: normaliseDifficulty(q.difficulty),
         createdBy:  req.user.id,
@@ -90,7 +104,7 @@ exports.createQuestion = async (req, res, next) => {
       return res.status(400).json({ error: 'Question text is required.' });
     }
     const question = await Question.create({
-      ...req.body,
+      ...ensureOptionIds(req.body),
       type:       normaliseType(req.body.type),
       difficulty: normaliseDifficulty(req.body.difficulty),
       createdBy:  req.user.id,
