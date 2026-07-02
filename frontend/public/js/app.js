@@ -83,7 +83,7 @@ const App = {
           <span class="cbt-loader__line cbt-loader__line--3"></span>
           <span class="cbt-loader__pen">✏️</span>
         </div>
-        <p class="cbt-loader__text">${message || 'Preparing your exams…'}</p>
+        ${message ? `<p class="cbt-loader__text">${message}</p>` : ''}
       </div>
       <style>
         .cbt-loader{position:fixed;inset:0;background:#0b2a6b;display:flex;flex-direction:column;
@@ -109,7 +109,7 @@ const App = {
 
   async handleSso(token, returnUrl) {
     const app = document.getElementById('app');
-    if (app) app.innerHTML = this.loaderHtml('Signing you in…');
+    if (app) app.innerHTML = this.loaderHtml(); // animation only, no text
 
     const scrubUrl = () =>
       window.history.replaceState({}, document.title,
