@@ -86,10 +86,15 @@ exports.bulkCreateQuestions = async (req, res, next) => {
 // POST /api/questions
 exports.createQuestion = async (req, res, next) => {
   try {
+    if (!req.body?.questionText || !String(req.body.questionText).trim()) {
+      return res.status(400).json({ error: 'Question text is required.' });
+    }
     const question = await Question.create({
       ...req.body,
-      createdBy: req.user.id,
-      school:    req.user.school,
+      type:       normaliseType(req.body.type),
+      difficulty: normaliseDifficulty(req.body.difficulty),
+      createdBy:  req.user.id,
+      school:     req.user.school,
     });
     res.status(201).json({ question });
   } catch (err) { next(err); }
