@@ -1,4 +1,5 @@
 const { Result, Exam, Question, Answer, User } = require('../models');
+const aiService = require('../services/ai.service');
 
 // Resolve a stored option _id (what MC / true-false answers store) to a
 // readable "Label. text"; leaves free-text answers untouched.
@@ -129,6 +130,7 @@ exports.submitExam = async (req, res, next) => {
       let correct = false;
       let marks   = 0;
       let flagged = false;
+      let aiMark = null, aiComment = null, aiConfidence = null;
 
       if (['multiple_choice', 'true_false'].includes(q.type)) {
         const correctOpt = (q.options || []).find(o => o.isCorrect);
@@ -144,8 +146,24 @@ exports.submitExam = async (req, res, next) => {
         // Short answers may have valid variants — flag a miss for teacher review.
         if (!correct && given && q.type === 'short_answer') flagged = true;
       } else {
-        // theory / essay — needs manual (or AI) marking
-        flagged = !!(ans.answer && String(ans.answer).trim());
+        // theory / essay — mark with AI now; the teacher can review/adjust later.
+        const studentText = ans.answer != null ? String(ans.answer).trim() : '';
+        if (studentText) {
+          try {
+            const ai = await aiService.markTheoryAnswer({
+              questionText:  q.questionText,
+              studentAnswer: studentText,
+              markingGuide:  q.markingGuide,
+            });
+            aiMark       = Math.max(0, Math.min(maxMarks, Number(ai.marksAwarded) || 0));
+            aiComment    = ai.comment || null;
+            aiConfidence = ['high', 'medium', 'low'].includes(ai.confidence) ? ai.confidence : 'medium';
+            marks        = aiMark;
+          } catch (err) {
+            console.error('[ai] theory marking failed:', err.message);
+          }
+          flagged = true; // AI-marked (or failed) — surface for teacher review
+        }
       }
 
       totalScore += marks;
@@ -156,6 +174,9 @@ exports.submitExam = async (req, res, next) => {
         isCorrect:     correct,
         marksAwarded:  marks,
         flagged,
+        aiMark,
+        aiComment,
+        aiConfidence,
       });
     }
 

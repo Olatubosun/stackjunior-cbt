@@ -25,7 +25,11 @@ const schemaHint = (type) => {
     return `Each object must have:
 - questionText (string)
 - type: "${type}"
-- correctAnswer (string — the expected answer)
+- correctAnswer (string): the expected answer. IMPORTANT — include EVERY commonly-accepted
+  form so the answer is not marked wrong on a technicality, separated by " | ":
+  standard abbreviations AND their full forms, alternative spellings, and close synonyms.
+  Examples: "USA | United States | U.S.A. | US", "H2O | water", "WHO | World Health Organization",
+  "Prof | Professor", "km | kilometre | kilometer". Put the fullest/most-correct form first.
 - explanation (string)
 - marks: 1`;
   }
@@ -140,6 +144,7 @@ Return ONLY valid JSON of the form { "questions": [ ... ] } where each question 
     correctAnswer:"A"|"B", explanation, marks:1 }
 - For fill_blank / short_answer:
   { questionText, type:"...", correctAnswer:"...", explanation, marks:1 }
+  (correctAnswer: include commonly-accepted variants/abbreviations + full forms separated by " | ")
 - For theory:
   { questionText, type:"theory",
     markingGuide:{ modelAnswer, keyPoints:[{point,marks}], keywords:[], maxMarks:5, strictness:"moderate" },
