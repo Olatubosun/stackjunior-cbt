@@ -212,46 +212,25 @@ const TakeExamPage = {
     }
   },
 
-  showResults(result) {
-    const pct   = result.percentage || 0;
-    const grade = Helpers.gradeFromPercent(pct);
-    const pass  = result.passed;
-
+  showResults(/* result */) {
+    // Students do NOT see their score here — it's shown only after a teacher
+    // releases the result.
     document.getElementById('app').innerHTML = `
       ${Navbar.render()}
       <div class="main-content" style="max-width:600px;margin:0 auto">
-        <div class="card" style="text-align:center;padding:40px">
-          <h2 style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:24px">
-            Exam Submitted!
+        <div class="card" style="text-align:center;padding:48px 40px">
+          <div style="font-size:56px;margin-bottom:12px">&#9989;</div>
+          <h2 style="font-size:22px;font-weight:700;color:var(--navy);margin-bottom:12px">
+            Exam Submitted
           </h2>
-          <div class="result-score-circle ${pass ? 'pass' : 'fail'}">
-            <div class="result-score-pct">${pct}%</div>
-            <div class="result-score-label">Grade ${grade}</div>
-          </div>
-          <div style="display:flex;justify-content:center;gap:24px;margin-bottom:24px;flex-wrap:wrap">
-            <div>
-              <div style="font-size:24px;font-weight:700;color:var(--navy)">${result.totalScore}</div>
-              <div style="font-size:12px;color:var(--muted)">Score</div>
-            </div>
-            <div>
-              <div style="font-size:24px;font-weight:700;color:var(--navy)">${this.exam?.totalMarks ?? ''}</div>
-              <div style="font-size:12px;color:var(--muted)">Total Marks</div>
-            </div>
-            <div>
-              <div style="font-size:24px;font-weight:700;color:var(--navy)">
-                ${Helpers.formatDuration(result.timeUsed || 0)}
-              </div>
-              <div style="font-size:12px;color:var(--muted)">Time Taken</div>
-            </div>
-          </div>
-          <span class="badge ${pass ? 'badge-green' : 'badge-red'}" style="font-size:15px;padding:8px 20px">
-            ${pass ? 'PASSED' : 'FAILED'}
-          </span>
-          <p style="color:var(--muted);font-size:14px;margin-top:16px">
-            Your results will be reviewed by your teacher and released soon.
+          <p style="color:var(--muted);font-size:15px;margin-bottom:6px">
+            Your answers have been submitted successfully.
           </p>
-          <div style="display:flex;gap:10px;justify-content:center;margin-top:20px">
-            <button class="btn btn-primary" onclick="App.navigate('results')">View My Results</button>
+          <p style="color:var(--muted);font-size:14px;margin-bottom:26px">
+            Your result will be available once your teacher releases it.
+          </p>
+          <div style="display:flex;gap:10px;justify-content:center">
+            <button class="btn btn-primary" onclick="App.navigate('results')">My Results</button>
             <button class="btn btn-outline" onclick="App.navigate('dashboard')">Dashboard</button>
           </div>
         </div>

@@ -35,6 +35,7 @@ const ExamsPage = {
     try {
       const data  = await Api.getExams();
       const exams = data.exams || [];
+      this._exams = exams;
 
       if (!exams.length) {
         Helpers.setHTML('exams-list', `
@@ -58,6 +59,7 @@ const ExamsPage = {
                 <th>Class</th>
                 <th>Duration</th>
                 <th>Questions</th>
+                ${Auth.isTeacher() ? '<th>Attempts</th>' : ''}
                 <th>Status</th>
                 ${Auth.isTeacher() ? '<th>Created</th><th>Actions</th>' : '<th>Action</th>'}
               </tr>
@@ -70,6 +72,7 @@ const ExamsPage = {
                   <td>${ex.classLevel}</td>
                   <td>${ex.duration} min</td>
                   <td>${ex.questions?.length || 0}</td>
+                  ${Auth.isTeacher() ? `<td>${ex.attemptsAllowed || 1}</td>` : ''}
                   <td>
                     <span class="badge ${Helpers.badgeForStatus(ex.status)}">
                       ${ex.status}
@@ -109,14 +112,37 @@ const ExamsPage = {
     }
   },
 
-  async publish(id) {
-    try {
-      await Api.publishExam(id);
-      Toast.success('Exam published and now available to students');
-      this.load();
-    } catch (err) {
-      Toast.error(err.message);
-    }
+  publish(id) {
+    const ex = (this._exams || []).find(e => e.id === id);
+    Modal.show({
+      title: 'Publish Exam',
+      body: `
+        <p style="font-size:14px;color:var(--muted);margin-bottom:14px">
+          Publishing makes this exam available to the class. Set how many times each
+          student may take it.
+        </p>
+        <div class="form-group">
+          <label>Attempts allowed per student</label>
+          <input type="number" id="publish-attempts" min="1" value="${ex?.attemptsAllowed || 1}" style="width:130px" />
+        </div>
+      `,
+      footer: `
+        <button class="btn btn-outline" id="pub-cancel">Cancel</button>
+        <button class="btn btn-green" id="pub-confirm">Publish</button>
+      `
+    });
+    document.getElementById('pub-cancel')?.addEventListener('click', () => Modal.close());
+    document.getElementById('pub-confirm')?.addEventListener('click', async () => {
+      const n = Math.max(1, parseInt(document.getElementById('publish-attempts').value, 10) || 1);
+      Modal.close();
+      try {
+        await Api.publishExam(id, { attemptsAllowed: n });
+        Toast.success('Exam published and now available to students');
+        this.load();
+      } catch (err) {
+        Toast.error(err.message);
+      }
+    });
   },
 
   delete(id) {

@@ -52,7 +52,7 @@ const Api = (() => {
     getExam:     (id)            => request('GET',    `/exams/${id}`),
     createExam:  (body)          => request('POST',   '/exams', body),
     updateExam:  (id, body)      => request('PUT',    `/exams/${id}`, body),
-    publishExam: (id)            => request('PATCH',  `/exams/${id}/publish`),
+    publishExam: (id, body)      => request('PATCH',  `/exams/${id}/publish`, body),
     deleteExam:  (id)            => request('DELETE', `/exams/${id}`),
     startExam:   (examId)         => request('POST',   '/results/start', { examId }),
     submitExam:  (resultId, body) => request('POST',   `/results/${resultId}/submit`, body),
@@ -62,6 +62,7 @@ const Api = (() => {
     getResult:        (id)               => request('GET', `/results/${id}`),
     markAnswer:       (rid, aid, body)   => request('PATCH', `/results/${rid}/answers/${aid}`, body),
     releaseResult:    (id, body)         => request('PATCH', `/results/${id}/release`, body),
+    releaseBulk:      (ids)              => request('PATCH', '/results/release-bulk', { ids }),
     getExamAnalytics: (examId)           => request('GET', `/results/exam/${examId}/analytics`),
 
     // ── Schools / Classes ──────────────────────────────────
