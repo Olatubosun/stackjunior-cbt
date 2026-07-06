@@ -112,6 +112,25 @@ const DashboardPage = {
   },
 
   async loadStudentDashboard() {
+    // A student with no class can't be shown any exams (strict class scoping).
+    if (!Auth.getUser()?.classId) {
+      Helpers.setHTML('dashboard-stats', `
+        <div class="stat-card"><div class="stat-value">0</div><div class="stat-label">Available Exams</div></div>
+        <div class="stat-card green"><div class="stat-value">0</div><div class="stat-label">Completed Exams</div></div>
+        <div class="stat-card gold"><div class="stat-value">0%</div><div class="stat-label">Average Score</div></div>
+      `);
+      Helpers.setHTML('dashboard-content', `
+        <div class="card">
+          <div class="empty-state" style="padding:44px">
+            <div class="empty-icon">🏫</div>
+            <h3>No class assigned yet</h3>
+            <p>You haven't been added to a class, so there are no exams to show.<br>
+               Please contact your school to be assigned to a class — your exams will appear here once you are.</p>
+          </div>
+        </div>
+      `);
+      return;
+    }
     try {
       const [eRes, rRes] = await Promise.all([
         Api.getExams(),

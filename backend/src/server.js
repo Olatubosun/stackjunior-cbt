@@ -132,6 +132,8 @@ sequelize
       "ADD COLUMN `classId` CHAR(36) BINARY NULL AFTER `school`");
     await addColumnIfMissing('exams', 'attemptsAllowed',
       "ADD COLUMN `attemptsAllowed` INT NOT NULL DEFAULT 1");
+    await addColumnIfMissing('exams', 'examType',
+      "ADD COLUMN `examType` ENUM('classwork','homework','test','examination') NOT NULL DEFAULT 'test'");
   })
   .then(() => sequelize.sync())
   .then(() => {

@@ -57,6 +57,7 @@ const ExamsPage = {
                 <th>Title</th>
                 <th>Subject</th>
                 <th>Class</th>
+                ${Auth.isTeacher() ? '<th>Type</th>' : ''}
                 <th>Duration</th>
                 <th>Questions</th>
                 ${Auth.isTeacher() ? '<th>Attempts</th>' : ''}
@@ -70,6 +71,7 @@ const ExamsPage = {
                   <td><strong>${ex.title}</strong></td>
                   <td>${ex.subject}</td>
                   <td>${ex.classLevel}</td>
+                  ${Auth.isTeacher() ? `<td><span class="badge badge-grey">${({classwork:'Class Work',homework:'Home Work',test:'Test',examination:'Examination'}[ex.examType]||'Test')}</span></td>` : ''}
                   <td>${ex.duration} min</td>
                   <td>${ex.questions?.length || 0}</td>
                   ${Auth.isTeacher() ? `<td>${ex.attemptsAllowed || 1}</td>` : ''}

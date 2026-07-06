@@ -42,6 +42,15 @@ const CreateExamPage = {
                 </div>
                 <div class="form-row">
                   <div class="form-group">
+                    <label>Exam Type *</label>
+                    <select id="ex-type">
+                      <option value="classwork">Class Work</option>
+                      <option value="homework">Home Work</option>
+                      <option value="test" selected>Test</option>
+                      <option value="examination">Examination</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
                     <label>Duration (minutes) *</label>
                     <input type="number" id="ex-duration" value="60" min="5" required />
                   </div>
@@ -241,6 +250,7 @@ const CreateExamPage = {
       Helpers.el('ex-subject').value      = exam.subject      || '';
       Helpers.el('ex-duration').value     = exam.duration     || 60;
       Helpers.el('ex-passmark').value     = exam.passMark     || 50;
+      if (document.getElementById('ex-type')) document.getElementById('ex-type').value = exam.examType || 'test';
       Helpers.el('ex-instructions').value = exam.instructions || '';
       Helpers.el('ex-randomise').checked  = exam.randomise !== false;
       const classSel = document.getElementById('ex-class-id');
@@ -279,6 +289,7 @@ const CreateExamPage = {
         subject:      Helpers.el('ex-subject').value,
         classId,
         classLevel:   className,
+        examType:     document.getElementById('ex-type')?.value || 'test',
         duration:     parseInt(Helpers.el('ex-duration').value),
         passMark:     parseInt(Helpers.el('ex-passmark').value),
         instructions: Helpers.el('ex-instructions').value,

@@ -60,7 +60,7 @@ exports.listResults = async (req, res, next) => {
           attributes: ['id', 'name', 'examNumber', 'class', 'school'],
           where: req.user.school ? { school: req.user.school } : undefined,
         },
-        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks', 'classLevel'] },
+        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks', 'classLevel', 'examType'] },
       ],
       order: [['createdAt', 'DESC']],
     });

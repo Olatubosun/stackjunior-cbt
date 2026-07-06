@@ -17,12 +17,22 @@ const ResultsPage = {
         </div>
 
         ${Auth.isTeacher() ? `
-          <!-- Status filter tabs for teacher -->
-          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+          <!-- Status filter tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center">
+            <span style="font-size:12px;color:var(--muted);min-width:52px">Status:</span>
             <button class="btn btn-primary btn-sm" onclick="ResultsPage.filter('all')"       id="f-all">All</button>
             <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('submitted')" id="f-submitted">Submitted</button>
             <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('marked')"    id="f-marked">Marked</button>
             <button class="btn btn-outline btn-sm" onclick="ResultsPage.filter('released')"  id="f-released">Released</button>
+          </div>
+          <!-- Exam-type filter tabs -->
+          <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+            <span style="font-size:12px;color:var(--muted);min-width:52px">Type:</span>
+            <button class="btn btn-primary btn-sm" onclick="ResultsPage.filterType('all')"          id="ft-all">All</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filterType('classwork')"    id="ft-classwork">Class Work</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filterType('homework')"     id="ft-homework">Home Work</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filterType('test')"         id="ft-test">Test</button>
+            <button class="btn btn-outline btn-sm" onclick="ResultsPage.filterType('examination')"  id="ft-examination">Examination</button>
           </div>
         ` : ''}
 
@@ -39,6 +49,7 @@ const ResultsPage = {
 
   _allResults: [],
   _filter: 'all',
+  _typeFilter: 'all',
 
   async init() {
     Navbar.setActive('results');
@@ -64,11 +75,24 @@ const ResultsPage = {
     this.renderList();
   },
 
-  renderList() {
+  filterType(type) {
+    this._typeFilter = type;
+    ['all','classwork','homework','test','examination'].forEach(k => {
+      const btn = document.getElementById(`ft-${k}`);
+      if (btn) btn.className = 'btn btn-sm ' + (k === type ? 'btn-primary' : 'btn-outline');
+    });
+    this.renderList();
+  },
+
+  _shownResults() {
     let results = this._allResults;
-    if (this._filter !== 'all') {
-      results = results.filter(r => r.status === this._filter);
-    }
+    if (this._filter !== 'all')     results = results.filter(r => r.status === this._filter);
+    if (this._typeFilter !== 'all') results = results.filter(r => (r.exam?.examType || 'test') === this._typeFilter);
+    return results;
+  },
+
+  renderList() {
+    const results = this._shownResults();
 
     if (!results.length) {
       Helpers.setHTML('results-list', `
@@ -113,6 +137,10 @@ const ResultsPage = {
     `);
   },
 
+  _typeLabel(t) {
+    return ({ classwork: 'Class Work', homework: 'Home Work', test: 'Test', examination: 'Examination' })[t] || 'Test';
+  },
+
   _renderTeacherList(results) {
     // Group by class (the exam's class level) — a result dashboard per class.
     const groups = {};
@@ -120,6 +148,17 @@ const ResultsPage = {
       const cls = r.exam?.classLevel || 'Unassigned';
       (groups[cls] = groups[cls] || []).push(r);
     });
+
+    const pendingAll = results.filter(r => r.status !== 'released').length;
+    const toolbar = `
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+        <span style="font-size:13px;color:var(--muted)">
+          ${results.length} result(s)${this._typeFilter !== 'all' ? ` · ${this._typeLabel(this._typeFilter)}` : ''}
+        </span>
+        ${pendingAll
+          ? `<button class="btn btn-green btn-sm" onclick="ResultsPage.releaseShown()">Release all shown (${pendingAll})</button>`
+          : ''}
+      </div>`;
 
     const html = Object.keys(groups).sort().map(cls => {
       const rows = groups[cls];
@@ -141,7 +180,8 @@ const ResultsPage = {
                 ${rows.map(r => `
                   <tr>
                     <td><strong>${r.student?.name || '-'}</strong></td>
-                    <td>${r.exam?.title || '-'}</td>
+                    <td>${r.exam?.title || '-'}
+                      <br><span class="badge badge-grey" style="font-size:10px">${this._typeLabel(r.exam?.examType)}</span></td>
                     <td>${this._scoreCell(r)}</td>
                     <td><span class="badge ${r.passed ? 'badge-green' : 'badge-red'}">${Helpers.gradeFromPercent(r.percentage || 0)}</span></td>
                     <td><span class="badge ${Helpers.badgeForStatus(r.status)}">${r.status?.replace('_', ' ')}</span></td>
@@ -158,10 +198,26 @@ const ResultsPage = {
         </div>`;
     }).join('');
 
-    Helpers.setHTML('results-list', html + `<p style="font-size:13px;color:var(--muted);margin-top:4px">${results.length} result(s)</p>`);
+    Helpers.setHTML('results-list', toolbar + html);
   },
 
   _esc(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); },
+
+  async releaseShown() {
+    const ids = this._shownResults().filter(r => r.status !== 'released').map(r => r.id);
+    if (!ids.length) return;
+    Modal.confirm({
+      title:   'Release Results',
+      message: `Release ${ids.length} result(s)? Students will be able to see their scores.`,
+      onConfirm: async () => {
+        try {
+          const data = await Api.releaseBulk(ids);
+          Toast.success(`Released ${data.released} result(s)`);
+          this.load();
+        } catch (err) { Toast.error(err.message); }
+      }
+    });
+  },
 
   async releaseClass(cls) {
     const ids = this._allResults
