@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const { Result, Exam, Question, Answer, User } = require('../models');
 const aiService = require('../services/ai.service');
 
@@ -41,8 +42,9 @@ const shapeResult = (r) => {
 exports.listResults = async (req, res, next) => {
   try {
     if (req.user.role === 'student') {
+      // Students only ever see results a teacher has released.
       const results = await Result.findAll({
-        where: { student: req.user.id },
+        where: { student: req.user.id, status: 'released' },
         include: [{ model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks'] }],
         order: [['createdAt', 'DESC']],
       });
@@ -58,7 +60,7 @@ exports.listResults = async (req, res, next) => {
           attributes: ['id', 'name', 'examNumber', 'class', 'school'],
           where: req.user.school ? { school: req.user.school } : undefined,
         },
-        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks'] },
+        { model: Exam, as: 'examRecord', attributes: ['id', 'title', 'subject', 'totalMarks', 'classLevel'] },
       ],
       order: [['createdAt', 'DESC']],
     });
@@ -73,23 +75,39 @@ exports.startExam = async (req, res, next) => {
     const { examId } = req.body;
     if (!examId) return res.status(400).json({ error: 'examId is required.' });
 
-    // Enforce school + class scoping at start time
+    // Enforce school + strict class scoping at start time
     const exam = await Exam.findByPk(examId);
     if (!exam) return res.status(404).json({ error: 'Exam not found.' });
     if (!req.user.school || exam.school !== req.user.school) {
       return res.status(403).json({ error: 'You do not have access to this exam.' });
     }
-    if (req.user.classId && exam.classId && exam.classId !== req.user.classId) {
+    if (!req.user.classId || exam.classId !== req.user.classId) {
       return res.status(403).json({ error: 'This exam is not for your class.' });
     }
     if (!['active', 'published'].includes(exam.status)) {
       return res.status(403).json({ error: 'This exam is not currently available.' });
     }
 
-    const existing = await Result.findOne({
+    // Resume an in-progress attempt if there is one.
+    const inProgress = await Result.findOne({
       where: { student: req.user.id, exam: examId, status: 'in_progress' },
     });
-    if (existing) return res.json({ result: existing });
+    if (inProgress) return res.json({ result: inProgress });
+
+    // Enforce the attempts limit (count completed attempts).
+    const allowed = exam.attemptsAllowed || 1;
+    const used = await Result.count({
+      where: {
+        student: req.user.id, exam: examId,
+        status: { [Op.in]: ['submitted', 'marking', 'marked', 'released'] },
+      },
+    });
+    if (used >= allowed) {
+      return res.status(403).json({
+        error: `You have used all ${allowed} attempt${allowed === 1 ? '' : 's'} for this exam.`,
+      });
+    }
+
     const result = await Result.create({
       student: req.user.id,
       exam:    examId,
@@ -312,6 +330,30 @@ exports.releaseResult = async (req, res, next) => {
     if (classTeacherNote !== undefined) updates.classTeacherNote = classTeacherNote;
     await result.update(updates);
     res.json({ result, message: 'Result released.' });
+  } catch (err) { next(err); }
+};
+
+// PATCH /api/results/release-bulk  { ids: [...] }  — release many at once
+exports.releaseBulk = async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids : [];
+    if (!ids.length) return res.status(400).json({ error: 'No result ids provided.' });
+
+    // Only release results in the teacher's school that aren't released yet.
+    const candidates = await Result.findAll({
+      where: { id: { [Op.in]: ids }, status: { [Op.in]: ['submitted', 'marking', 'marked'] } },
+      include: [{ model: User, as: 'studentUser', attributes: ['school'] }],
+    });
+    const releasable = candidates
+      .filter(r => !req.user.school || r.studentUser?.school === req.user.school)
+      .map(r => r.id);
+    if (!releasable.length) return res.json({ released: 0 });
+
+    const [count] = await Result.update(
+      { status: 'released', releasedAt: new Date(), releasedBy: req.user.id },
+      { where: { id: { [Op.in]: releasable } } },
+    );
+    res.json({ released: count, message: `Released ${count} result(s).` });
   } catch (err) { next(err); }
 };
 

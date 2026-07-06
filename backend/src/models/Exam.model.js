@@ -24,6 +24,7 @@ const Exam = sequelize.define('Exam', {
   },
   scheduledStart:     { type: DataTypes.DATE, allowNull: true },
   scheduledEnd:       { type: DataTypes.DATE, allowNull: true },
+  attemptsAllowed:    { type: DataTypes.INTEGER, defaultValue: 1 }, // times a student may sit it
   negativeMarking:    { type: DataTypes.BOOLEAN, defaultValue: false },
   randomiseQuestions: { type: DataTypes.BOOLEAN, defaultValue: true },
   createdBy:          { type: DataTypes.UUID, allowNull: true },

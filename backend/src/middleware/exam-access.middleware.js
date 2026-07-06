@@ -26,8 +26,8 @@ module.exports = (paramName = 'id') => async (req, res, next) => {
       if (exam.school !== u.school) {
         return res.status(403).json({ error: 'You do not have access to this exam.' });
       }
-      // Enforce class scoping only when we know the student's class
-      if (u.classId && exam.classId && exam.classId !== u.classId) {
+      // Strict class scoping — a student may only access their own class's exams.
+      if (!u.classId || exam.classId !== u.classId) {
         return res.status(403).json({ error: 'This exam is not for your class.' });
       }
     } else {
