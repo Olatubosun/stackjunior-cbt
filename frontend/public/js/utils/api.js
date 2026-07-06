@@ -61,6 +61,7 @@ const Api = (() => {
     getResults:       ()                 => request('GET', '/results'),
     getResult:        (id)               => request('GET', `/results/${id}`),
     markAnswer:       (rid, aid, body)   => request('PATCH', `/results/${rid}/answers/${aid}`, body),
+    markResult:       (id)               => request('PATCH', `/results/${id}/mark`),
     releaseResult:    (id, body)         => request('PATCH', `/results/${id}/release`, body),
     releaseBulk:      (ids)              => request('PATCH', '/results/release-bulk', { ids }),
     getExamAnalytics: (examId)           => request('GET', `/results/exam/${examId}/analytics`),

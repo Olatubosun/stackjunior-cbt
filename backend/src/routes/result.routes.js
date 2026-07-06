@@ -13,6 +13,7 @@ router.get('/exam/:examId',       authorise(...canReview), ctrl.getExamResults);
 router.patch('/release-bulk',     authorise(...canReview), ctrl.releaseBulk); // before /:id/... routes
 router.get('/:id',                ctrl.getResult); // after /my and /exam/:examId so it doesn't shadow them
 router.patch('/:id/answers/:answerId', authorise(...canReview), ctrl.markAnswer);
+router.patch('/:id/mark',         authorise(...canReview), ctrl.markResult);
 router.patch('/:id/release',      authorise(...canReview), ctrl.releaseResult);
 
 module.exports = router;

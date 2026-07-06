@@ -318,6 +318,16 @@ exports.markAnswer = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// PATCH /api/results/:id/mark  — finalise review, move the result to 'marked'
+exports.markResult = async (req, res, next) => {
+  try {
+    const result = await Result.findByPk(req.params.id);
+    if (!result) return res.status(404).json({ error: 'Result not found.' });
+    if (result.status !== 'released') await result.update({ status: 'marked' });
+    res.json({ result, message: 'Result marked.' });
+  } catch (err) { next(err); }
+};
+
 // PATCH /api/results/:id/release  — teacher/class teacher releases result
 exports.releaseResult = async (req, res, next) => {
   try {
