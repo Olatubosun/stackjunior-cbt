@@ -30,7 +30,8 @@ const CreateExamPage = {
                 <div class="form-row">
                   <div class="form-group">
                     <label>Subject *</label>
-                    <input type="text" id="ex-subject" placeholder="e.g. Mathematics" required />
+                    <input type="text" id="ex-subject" placeholder="Auto-filled from selected questions" required />
+                    <small style="color:var(--muted);font-size:11px">Set automatically from the questions you pick</small>
                   </div>
                   <div class="form-group">
                     <label>Class *</label>
@@ -201,7 +202,22 @@ const CreateExamPage = {
     this.loadBank();
   },
 
+  // Derive the exam subject from the questions actually chosen — they carry the
+  // real subject from the database, so the exam (and the dashboard card) can
+  // never show a stale or mistyped subject. Lists every distinct subject when
+  // the selection spans more than one.
+  derivedSubject() {
+    return [...new Set(this.selectedQuestions.map(q => q.subject).filter(Boolean))].join(', ');
+  },
+
+  syncSubjectFromQuestions() {
+    const el = document.getElementById('ex-subject');
+    const derived = this.derivedSubject();
+    if (el && derived) el.value = derived;
+  },
+
   renderSelected() {
+    this.syncSubjectFromQuestions();
     const total = this.selectedQuestions.reduce((s, q) => s + (q.markingGuide?.maxMarks ?? q.marks ?? 1), 0);
     Helpers.setText('q-count',     this.selectedQuestions.length);
     Helpers.setText('total-marks', `${total} marks total`);
@@ -286,7 +302,7 @@ const CreateExamPage = {
     try {
       const body = {
         title:        Helpers.el('ex-title').value,
-        subject:      Helpers.el('ex-subject').value,
+        subject:      this.derivedSubject() || Helpers.el('ex-subject').value,
         classId,
         classLevel:   className,
         examType:     document.getElementById('ex-type')?.value || 'test',
