@@ -5,8 +5,6 @@ const App = {
   currentPage: null,
 
   pages: {
-    'login':           LoginPage,
-    'register':        RegisterPage,
     'dashboard':       DashboardPage,
     'questions':       QuestionsPage,
     'create-question': CreateQuestionPage,
@@ -18,13 +16,18 @@ const App = {
     'result-detail':   ResultDetailPage,
   },
 
+  // Send an unauthenticated user back to StackJunior — the CBT has no login
+  // page of its own; users always arrive and leave via StackJunior.
+  gotoStackjunior() {
+    const url = (window.CBT_CONFIG && window.CBT_CONFIG.stackjuniorUrl) || 'https://stackjunior.com';
+    window.location.href = url;
+  },
+
   // Navigate to a named page, optionally passing an id param
   navigate(page, param = null) {
-    if (!Auth.isLoggedIn() && !['login', 'register'].includes(page)) {
-      page = 'login';
-    }
-    if (Auth.isLoggedIn() && ['login', 'register'].includes(page)) {
-      page = 'dashboard';
+    if (!Auth.isLoggedIn()) {
+      this.gotoStackjunior();
+      return;
     }
 
     const pageObj = this.pages[page];
@@ -61,11 +64,11 @@ const App = {
       return;
     }
 
-    // Determine starting page
+    // No SSO token and no session → this app is entered only from StackJunior.
     if (Auth.isLoggedIn()) {
       this.navigate('dashboard');
     } else {
-      this.navigate('login');
+      this.gotoStackjunior();
     }
   },
 
@@ -132,8 +135,22 @@ const App = {
     } catch (err) {
       Auth.clearSession();
       scrubUrl();
-      this.navigate('login');
-      if (window.Toast) Toast.error(err.message || 'Single sign-on failed. Please log in.');
+      // No login page — show an error with a way back to StackJunior.
+      const app2 = document.getElementById('app');
+      if (app2) app2.innerHTML = `
+        <div style="position:fixed;inset:0;background:#0b2a6b;display:flex;align-items:center;justify-content:center;z-index:9999">
+          <div style="text-align:center;color:#fff;max-width:380px;padding:24px">
+            <div style="font-size:44px;margin-bottom:12px">&#9888;&#65039;</div>
+            <h2 style="margin:0 0 8px;font-size:20px">Couldn't sign you in</h2>
+            <p style="color:#cdd8f0;font-size:14px;margin:0 0 22px">
+              ${(err && err.message) || 'Your session may have expired. Please open the CBT again from StackJunior.'}
+            </p>
+            <button onclick="App.gotoStackjunior()"
+                    style="background:#2563eb;color:#fff;border:none;padding:11px 22px;border-radius:8px;font-weight:700;cursor:pointer">
+              Return to StackJunior
+            </button>
+          </div>
+        </div>`;
     }
   },
 
@@ -155,7 +172,7 @@ const App = {
       window.location.href = dest;
       return;
     }
-    this.navigate('login');
+    this.gotoStackjunior();
   }
 };
 
