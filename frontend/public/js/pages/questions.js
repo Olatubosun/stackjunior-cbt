@@ -102,7 +102,7 @@ const QuestionsPage = {
                   <td>${q.subject}</td>
                   <td>${q.topic}</td>
                   <td><span class="badge badge-blue">${typeLabel[q.type] || q.type}</span></td>
-                  <td>${q.marks}</td>
+                  <td>${q.markingGuide?.maxMarks ?? q.marks ?? 1}</td>
                   <td><span class="badge badge-grey">${q.source}</span></td>
                   <td>
                     <button class="btn btn-outline btn-sm"

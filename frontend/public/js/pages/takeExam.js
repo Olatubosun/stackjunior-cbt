@@ -125,7 +125,7 @@ const TakeExamPage = {
         <div class="question-number">
           Question ${index + 1} of ${this.questions.length}
           <span class="badge badge-blue" style="margin-left:8px">${typeLabel[q.type]}</span>
-          <span class="badge badge-grey" style="margin-left:4px">${q.marks} mark${q.marks > 1 ? 's' : ''}</span>
+          <span class="badge badge-grey" style="margin-left:4px">${(() => { const m = q.markingGuide?.maxMarks ?? q.marks ?? 1; return `${m} mark${m > 1 ? 's' : ''}`; })()}</span>
         </div>
         <div class="question-text">${q.questionText}</div>
         ${optionsHTML()}

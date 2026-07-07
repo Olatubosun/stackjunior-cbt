@@ -178,7 +178,7 @@ const CreateExamPage = {
                onclick="CreateExamPage.toggleQuestion(${JSON.stringify(q).replace(/"/g,'&quot;')})">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px">
               <span class="badge badge-blue" style="font-size:11px">${typeLabel[q.type] || q.type}</span>
-              <span style="font-size:12px;color:var(--muted)">${q.marks} mark${q.marks > 1 ? 's' : ''}</span>
+              <span style="font-size:12px;color:var(--muted)">${(() => { const m = q.markingGuide?.maxMarks ?? q.marks ?? 1; return `${m} mark${m > 1 ? 's' : ''}`; })()}</span>
             </div>
             <p style="font-size:13px;color:var(--navy);margin:0">${Helpers.truncate(q.questionText, 80)}</p>
             <p style="font-size:11px;color:var(--muted);margin:4px 0 0">${q.subject} | ${q.topic}</p>
@@ -202,7 +202,7 @@ const CreateExamPage = {
   },
 
   renderSelected() {
-    const total = this.selectedQuestions.reduce((s, q) => s + (q.marks || 1), 0);
+    const total = this.selectedQuestions.reduce((s, q) => s + (q.markingGuide?.maxMarks ?? q.marks ?? 1), 0);
     Helpers.setText('q-count',     this.selectedQuestions.length);
     Helpers.setText('total-marks', `${total} marks total`);
 
@@ -227,7 +227,7 @@ const CreateExamPage = {
             <div style="flex:1">
               <p style="margin:0;font-size:13px;font-weight:600">${Helpers.truncate(q.questionText, 60)}</p>
               <span class="badge badge-blue" style="font-size:11px">${typeLabel[q.type] || q.type}</span>
-              <span style="font-size:11px;color:var(--muted);margin-left:6px">${q.marks} mark(s)</span>
+              <span style="font-size:11px;color:var(--muted);margin-left:6px">${q.markingGuide?.maxMarks ?? q.marks ?? 1} mark(s)</span>
             </div>
             <button class="btn btn-danger btn-sm" style="padding:3px 8px"
                     onclick="CreateExamPage.removeQuestion('${q.id}')">x</button>
@@ -271,7 +271,7 @@ const CreateExamPage = {
     btn.disabled    = true;
     btn.textContent = 'Saving...';
 
-    const totalMarks = this.selectedQuestions.reduce((s, q) => s + (q.marks || 1), 0);
+    const totalMarks = this.selectedQuestions.reduce((s, q) => s + (q.markingGuide?.maxMarks ?? q.marks ?? 1), 0);
 
     const classId  = document.getElementById('ex-class-id')?.value || '';
     const classSel = document.getElementById('ex-class-id');

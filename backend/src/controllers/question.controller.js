@@ -15,6 +15,20 @@ const ensureOptionIds = (q) => {
   return { ...q, options };
 };
 
+// Marks live in markingGuide.maxMarks. The AI emits a loose top-level `marks`
+// (e.g. 1 or 5) which has no column and gets silently dropped on save — leaving
+// the questions list showing "undefined". Fold it into markingGuide.maxMarks so
+// the value persists and both the list and exam totals can read it.
+const withMarks = (q) => {
+  const guide = { ...(q.markingGuide || {}) };
+  // The top-level `marks` field is what the user edits in the form, so it wins
+  // over any AI-supplied markingGuide.maxMarks.
+  const raw   = q.marks ?? q.maxMarks ?? guide.maxMarks;
+  const marks = Number(raw);
+  guide.maxMarks = Number.isFinite(marks) && marks > 0 ? marks : 1;
+  return { ...q, markingGuide: guide };
+};
+
 // GET /api/questions
 exports.getQuestions = async (req, res, next) => {
   try {
@@ -86,7 +100,7 @@ exports.bulkCreateQuestions = async (req, res, next) => {
     if (!list.length) return res.status(400).json({ error: 'No questions provided.' });
     const saved = await Question.bulkCreate(
       list.map(q => ({
-        ...ensureOptionIds(q),
+        ...withMarks(ensureOptionIds(q)),
         type:       normaliseType(q.type),
         difficulty: normaliseDifficulty(q.difficulty),
         createdBy:  req.user.id,
@@ -104,7 +118,7 @@ exports.createQuestion = async (req, res, next) => {
       return res.status(400).json({ error: 'Question text is required.' });
     }
     const question = await Question.create({
-      ...ensureOptionIds(req.body),
+      ...withMarks(ensureOptionIds(req.body)),
       type:       normaliseType(req.body.type),
       difficulty: normaliseDifficulty(req.body.difficulty),
       createdBy:  req.user.id,
@@ -130,7 +144,8 @@ exports.updateQuestion = async (req, res, next) => {
   try {
     const question = await Question.findByPk(req.params.id);
     if (!question) return res.status(404).json({ error: 'Question not found.' });
-    await question.update(req.body);
+    const touchesMarks = 'marks' in req.body || 'maxMarks' in req.body || 'markingGuide' in req.body;
+    await question.update(touchesMarks ? withMarks(req.body) : req.body);
     res.json({ question });
   } catch (err) { next(err); }
 };
