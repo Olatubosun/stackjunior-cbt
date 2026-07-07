@@ -179,7 +179,7 @@ const CreateQuestionPage = {
       Helpers.el('q-class').value      = q.classLevel || '';
       Helpers.el('q-difficulty').value = q.difficulty || 'medium';
       Helpers.el('q-type').value       = q.type       || 'multiple_choice';
-      Helpers.el('q-marks').value      = q.marks      || 1;
+      Helpers.el('q-marks').value      = q.markingGuide?.maxMarks ?? q.marks ?? 1;
       Helpers.el('q-text').value       = q.questionText || '';
 
       this.toggleSections(q.type);

@@ -1,7 +1,11 @@
 // js/utils/api.js
 // Central API client — all fetch calls go through here
 
-const API_BASE = 'http://localhost:5000/api';
+// Resolved at runtime from config.js (window.CBT_CONFIG), with a local-dev
+// fallback so the SPA still works if served without the config endpoint.
+const API_BASE =
+  (typeof window !== 'undefined' && window.CBT_CONFIG && window.CBT_CONFIG.apiBase)
+  || 'http://localhost:5000/api';
 
 const Api = (() => {
 
@@ -29,9 +33,10 @@ const Api = (() => {
     delete: (path)        => request('DELETE', path),
 
     // ── Auth ───────────────────────────────────────────────
-    login:    (body) => request('POST', '/auth/login',    body),
-    register: (body) => request('POST', '/auth/register', body),
-    getMe:    ()     => request('GET',  '/auth/me'),
+    login:    (body)  => request('POST', '/auth/login',    body),
+    register: (body)  => request('POST', '/auth/register', body),
+    ssoLogin: (token) => request('POST', '/auth/sso',      { token }),
+    getMe:    ()      => request('GET',  '/auth/me'),
 
     // ── Questions ──────────────────────────────────────────
     getQuestions:    (params = '') => request('GET',    `/questions${params}`),
@@ -42,19 +47,23 @@ const Api = (() => {
     bulkImport:      (body)        => request('POST',   '/questions/bulk', body),
 
     // ── Exams ──────────────────────────────────────────────
-    getExams:    ()              => request('GET',    '/exams'),
+    getExams:       ()           => request('GET',    '/exams'),
+    getReadyExams:  ()           => request('GET',    '/exams/ready'),
     getExam:     (id)            => request('GET',    `/exams/${id}`),
     createExam:  (body)          => request('POST',   '/exams', body),
     updateExam:  (id, body)      => request('PUT',    `/exams/${id}`, body),
+    publishExam: (id, body)      => request('PATCH',  `/exams/${id}/publish`, body),
     deleteExam:  (id)            => request('DELETE', `/exams/${id}`),
-    startExam:   (id)            => request('POST',   `/exams/${id}/start`),
-    submitExam:  (id, body)      => request('POST',   `/exams/${id}/submit`, body),
+    startExam:   (examId)         => request('POST',   '/results/start', { examId }),
+    submitExam:  (resultId, body) => request('POST',   `/results/${resultId}/submit`, body),
 
     // ── Results ────────────────────────────────────────────
     getResults:       ()                 => request('GET', '/results'),
     getResult:        (id)               => request('GET', `/results/${id}`),
-    markAnswer:       (rid, aid, body)   => request('PUT', `/results/${rid}/answers/${aid}`, body),
-    releaseResult:    (id, body)         => request('PUT', `/results/${id}/release`, body),
+    markAnswer:       (rid, aid, body)   => request('PATCH', `/results/${rid}/answers/${aid}`, body),
+    markResult:       (id)               => request('PATCH', `/results/${id}/mark`),
+    releaseResult:    (id, body)         => request('PATCH', `/results/${id}/release`, body),
+    releaseBulk:      (ids)              => request('PATCH', '/results/release-bulk', { ids }),
     getExamAnalytics: (examId)           => request('GET', `/results/exam/${examId}/analytics`),
 
     // ── Schools / Classes ──────────────────────────────────
@@ -63,9 +72,10 @@ const Api = (() => {
     getSchoolClasses:   (id)      => request('GET', `/schools/${id}/classes`),
 
     // ── AI ─────────────────────────────────────────────────
-    aiGenerateQuestions: (body) => request('POST', '/ai/generate-questions',  body),
-    aiGenerateFromText:  (body) => request('POST', '/ai/generate-from-text',  body),
-    aiScanPaper:         (body) => request('POST', '/ai/scan-paper',          body),
+    aiGenerateQuestions:    (body) => request('POST', '/ai/generate-questions', body),
+    aiGenerateFromText:     (body) => request('POST', '/ai/generate-from-text', body),
+    aiGenerateExternalExam: (body) => request('POST', '/ai/external-exam',      body),
+    aiScanPaper:            (body) => request('POST', '/ai/scan-paper',         body),
     aiMarkAnswer:        (body) => request('POST', '/ai/mark-answer',         body),
     aiGenerateFeedback:  (body) => request('POST', '/ai/generate-feedback',   body),
   };

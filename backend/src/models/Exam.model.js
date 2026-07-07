@@ -18,12 +18,18 @@ const Exam = sequelize.define('Exam', {
     type: DataTypes.ENUM('practice', 'exam'),
     defaultValue: 'exam',
   },
+  // The kind of assessment — drives grouping/release on the results dashboard.
+  examType: {
+    type: DataTypes.ENUM('classwork', 'homework', 'test', 'examination'),
+    defaultValue: 'test',
+  },
   status: {
     type: DataTypes.ENUM('draft', 'published', 'active', 'closed'),
     defaultValue: 'draft',
   },
   scheduledStart:     { type: DataTypes.DATE, allowNull: true },
   scheduledEnd:       { type: DataTypes.DATE, allowNull: true },
+  attemptsAllowed:    { type: DataTypes.INTEGER, defaultValue: 1 }, // times a student may sit it
   negativeMarking:    { type: DataTypes.BOOLEAN, defaultValue: false },
   randomiseQuestions: { type: DataTypes.BOOLEAN, defaultValue: true },
   createdBy:          { type: DataTypes.UUID, allowNull: true },

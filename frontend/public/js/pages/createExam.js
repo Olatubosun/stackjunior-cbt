@@ -30,7 +30,8 @@ const CreateExamPage = {
                 <div class="form-row">
                   <div class="form-group">
                     <label>Subject *</label>
-                    <input type="text" id="ex-subject" placeholder="e.g. Mathematics" required />
+                    <input type="text" id="ex-subject" placeholder="Auto-filled from selected questions" required />
+                    <small style="color:var(--muted);font-size:11px">Set automatically from the questions you pick</small>
                   </div>
                   <div class="form-group">
                     <label>Class *</label>
@@ -41,6 +42,15 @@ const CreateExamPage = {
                   </div>
                 </div>
                 <div class="form-row">
+                  <div class="form-group">
+                    <label>Exam Type *</label>
+                    <select id="ex-type">
+                      <option value="classwork">Class Work</option>
+                      <option value="homework">Home Work</option>
+                      <option value="test" selected>Test</option>
+                      <option value="examination">Examination</option>
+                    </select>
+                  </div>
                   <div class="form-group">
                     <label>Duration (minutes) *</label>
                     <input type="number" id="ex-duration" value="60" min="5" required />
@@ -169,7 +179,7 @@ const CreateExamPage = {
                onclick="CreateExamPage.toggleQuestion(${JSON.stringify(q).replace(/"/g,'&quot;')})">
             <div style="display:flex;justify-content:space-between;margin-bottom:4px">
               <span class="badge badge-blue" style="font-size:11px">${typeLabel[q.type] || q.type}</span>
-              <span style="font-size:12px;color:var(--muted)">${q.marks} mark${q.marks > 1 ? 's' : ''}</span>
+              <span style="font-size:12px;color:var(--muted)">${(() => { const m = q.markingGuide?.maxMarks ?? q.marks ?? 1; return `${m} mark${m > 1 ? 's' : ''}`; })()}</span>
             </div>
             <p style="font-size:13px;color:var(--navy);margin:0">${Helpers.truncate(q.questionText, 80)}</p>
             <p style="font-size:11px;color:var(--muted);margin:4px 0 0">${q.subject} | ${q.topic}</p>
@@ -192,8 +202,23 @@ const CreateExamPage = {
     this.loadBank();
   },
 
+  // Derive the exam subject from the questions actually chosen — they carry the
+  // real subject from the database, so the exam (and the dashboard card) can
+  // never show a stale or mistyped subject. Lists every distinct subject when
+  // the selection spans more than one.
+  derivedSubject() {
+    return [...new Set(this.selectedQuestions.map(q => q.subject).filter(Boolean))].join(', ');
+  },
+
+  syncSubjectFromQuestions() {
+    const el = document.getElementById('ex-subject');
+    const derived = this.derivedSubject();
+    if (el && derived) el.value = derived;
+  },
+
   renderSelected() {
-    const total = this.selectedQuestions.reduce((s, q) => s + (q.marks || 1), 0);
+    this.syncSubjectFromQuestions();
+    const total = this.selectedQuestions.reduce((s, q) => s + (q.markingGuide?.maxMarks ?? q.marks ?? 1), 0);
     Helpers.setText('q-count',     this.selectedQuestions.length);
     Helpers.setText('total-marks', `${total} marks total`);
 
@@ -218,7 +243,7 @@ const CreateExamPage = {
             <div style="flex:1">
               <p style="margin:0;font-size:13px;font-weight:600">${Helpers.truncate(q.questionText, 60)}</p>
               <span class="badge badge-blue" style="font-size:11px">${typeLabel[q.type] || q.type}</span>
-              <span style="font-size:11px;color:var(--muted);margin-left:6px">${q.marks} mark(s)</span>
+              <span style="font-size:11px;color:var(--muted);margin-left:6px">${q.markingGuide?.maxMarks ?? q.marks ?? 1} mark(s)</span>
             </div>
             <button class="btn btn-danger btn-sm" style="padding:3px 8px"
                     onclick="CreateExamPage.removeQuestion('${q.id}')">x</button>
@@ -241,6 +266,7 @@ const CreateExamPage = {
       Helpers.el('ex-subject').value      = exam.subject      || '';
       Helpers.el('ex-duration').value     = exam.duration     || 60;
       Helpers.el('ex-passmark').value     = exam.passMark     || 50;
+      if (document.getElementById('ex-type')) document.getElementById('ex-type').value = exam.examType || 'test';
       Helpers.el('ex-instructions').value = exam.instructions || '';
       Helpers.el('ex-randomise').checked  = exam.randomise !== false;
       const classSel = document.getElementById('ex-class-id');
@@ -261,7 +287,7 @@ const CreateExamPage = {
     btn.disabled    = true;
     btn.textContent = 'Saving...';
 
-    const totalMarks = this.selectedQuestions.reduce((s, q) => s + (q.marks || 1), 0);
+    const totalMarks = this.selectedQuestions.reduce((s, q) => s + (q.markingGuide?.maxMarks ?? q.marks ?? 1), 0);
 
     const classId  = document.getElementById('ex-class-id')?.value || '';
     const classSel = document.getElementById('ex-class-id');
@@ -276,9 +302,10 @@ const CreateExamPage = {
     try {
       const body = {
         title:        Helpers.el('ex-title').value,
-        subject:      Helpers.el('ex-subject').value,
+        subject:      this.derivedSubject() || Helpers.el('ex-subject').value,
         classId,
         classLevel:   className,
+        examType:     document.getElementById('ex-type')?.value || 'test',
         duration:     parseInt(Helpers.el('ex-duration').value),
         passMark:     parseInt(Helpers.el('ex-passmark').value),
         instructions: Helpers.el('ex-instructions').value,

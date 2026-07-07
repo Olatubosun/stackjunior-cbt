@@ -73,7 +73,7 @@ const ResultDetailPage = {
               </span>
             </div>
           </div>
-          ${Auth.isTeacher() && r.status === 'teacher_reviewed' ? `
+          ${Auth.isTeacher() && r.status !== 'released' ? `
             <div>
               <div class="form-group" style="margin-bottom:10px">
                 <label>General Comment (optional)</label>
@@ -81,6 +81,10 @@ const ResultDetailPage = {
                   placeholder="Add a comment for this student..."
                   style="width:220px">${r.teacherComment || ''}</textarea>
               </div>
+              ${r.status === 'submitted' ? `
+                <button class="btn btn-outline btn-block" style="margin-bottom:8px"
+                        onclick="ResultDetailPage.markReviewed()">Mark as Reviewed</button>
+              ` : ''}
               <button class="btn btn-green btn-block"
                       onclick="ResultDetailPage.release()">
                 Release to Student
@@ -146,7 +150,7 @@ const ResultDetailPage = {
             ${ans.isCorrect === false && !isTheory ? `<span class="badge badge-red">Incorrect</span>` : ''}
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            ${ans.aiMark !== undefined ? `
+            ${ans.aiMark != null ? `
               <span style="font-size:13px;color:var(--muted)">AI: ${ans.aiMark}/${ans.maxMarks}</span>
             ` : ''}
             <span style="font-weight:700;color:var(--navy);font-size:15px">
@@ -183,13 +187,13 @@ const ResultDetailPage = {
         ` : ''}
 
         <!-- Teacher marking for theory -->
-        ${Auth.isTeacher() && isTheory ? `
+        ${Auth.isTeacher() ? `
           <div style="border-top:1px dashed var(--border);padding-top:12px;margin-top:8px">
             <div style="display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap">
               <div>
-                <label style="font-size:12px">Marks Awarded</label>
-                <input type="number" id="mark-${ans.id}" value="${ans.teacherMark ?? ans.aiMark ?? ''}"
-                       min="0" max="${ans.maxMarks}"
+                <label style="font-size:12px">Marks Awarded</label><br>
+                <input type="number" id="mark-${ans.id}" value="${ans.teacherMark ?? ans.marksAwarded ?? 0}"
+                       min="0" max="${ans.maxMarks}" step="0.5"
                        style="width:80px;padding:6px;border:1.5px solid var(--border);border-radius:6px" />
                 <span style="font-size:12px;color:var(--muted)"> / ${ans.maxMarks}</span>
               </div>
@@ -229,6 +233,18 @@ const ResultDetailPage = {
       });
       Toast.success('Mark saved');
       const data  = await Api.getResult(resultId);
+      this.result = data.result;
+      this.renderDetail();
+    } catch (err) {
+      Toast.error(err.message);
+    }
+  },
+
+  async markReviewed() {
+    try {
+      await Api.markResult(this._resultId);
+      Toast.success('Result marked — moved to the Marked list');
+      const data  = await Api.getResult(this._resultId);
       this.result = data.result;
       this.renderDetail();
     } catch (err) {

@@ -13,6 +13,12 @@ const STACKJUNIOR_STUDENTS_URL =
   process.env.STACKJUNIOR_STUDENTS_URL || `${STACKJUNIOR_BASE_URL}/v2/school-admin/students`;
 const STACKJUNIOR_TIMEOUT_MS = Number(process.env.STACKJUNIOR_TIMEOUT_MS || 10000);
 
+// In-memory throttle so a school's (potentially 1000+) student roster isn't
+// re-synced on every admin login — only once per TTL window. Keyed by local
+// school id; resets when the process restarts.
+const lastRosterSync = new Map();
+const ROSTER_SYNC_TTL_MS = Number(process.env.ROSTER_SYNC_TTL_MS || 10 * 60 * 1000);
+
 const isEmail = (s) => typeof s === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s);
 
 const signToken = (id) =>
@@ -288,62 +294,98 @@ const upsertStudentsForSchool = async (schoolId, externalStudents) => {
       .map(c => [String(c.externalId), c.id])
   );
 
-  let synced = 0;
+  // ── 1. Normalise every roster row once (no DB calls) ──────────
+  const prepared = [];
   for (const s of externalStudents) {
     const usernameLc = s?.username ? String(s.username).toLowerCase() : null;
     const realEmail  = s?.email && isEmail(s.email) ? s.email.toLowerCase() : null;
     if (!usernameLc && !realEmail) continue;
-
-    const emailForLocal = realEmail || `${usernameLc}@stackjunior.local`;
-
-    // Resolve class
+    const emailForLocal   = realEmail || `${usernameLc}@stackjunior.local`;
     const externalClassId = String(s.school_class_id ?? s.class?.id ?? '').trim();
     const localClassId    = externalClassId ? classMap.get(externalClassId) || null : null;
-
     const displayName =
       s.name || s.full_name
       || [s.first_name, s.last_name].filter(Boolean).join(' ').trim()
       || usernameLc || emailForLocal.split('@')[0];
+    const externalId = s?.id != null ? String(s.id) : null;
+    prepared.push({ usernameLc, emailForLocal, localClassId, displayName, externalId });
+  }
+  if (!prepared.length) return 0;
 
-    const orClauses = [{ email: emailForLocal }];
-    if (usernameLc) orClauses.push({ username: usernameLc });
-    let user = await User.findOne({ where: { [Op.or]: orClauses } });
+  // ── 2. One query to load every already-existing match ─────────
+  const extIds    = [...new Set(prepared.map(p => p.externalId).filter(Boolean))];
+  const emails    = [...new Set(prepared.map(p => p.emailForLocal))];
+  const usernames = [...new Set(prepared.map(p => p.usernameLc).filter(Boolean))];
+  const matchOr = [];
+  if (extIds.length)    matchOr.push({ externalId: { [Op.in]: extIds } });
+  if (emails.length)    matchOr.push({ email:      { [Op.in]: emails } });
+  if (usernames.length) matchOr.push({ username:   { [Op.in]: usernames } });
+  const existing = matchOr.length ? await User.findAll({ where: { [Op.or]: matchOr } }) : [];
+  const byExt = new Map(), byEmail = new Map(), byUser = new Map();
+  for (const u of existing) {
+    if (u.externalId) byExt.set(String(u.externalId), u);
+    if (u.email)      byEmail.set(u.email.toLowerCase(), u);
+    if (u.username)   byUser.set(u.username.toLowerCase(), u);
+  }
 
-    if (!user) {
-      try {
-        await User.create({
-          name:     displayName,
-          email:    emailForLocal,
-          username: usernameLc,
-          password: crypto.randomBytes(24).toString('hex'),
-          role:     'student',
-          school:   schoolId,
-          classId:  localClassId,
-          isActive: true,
-        });
-        synced++;
-      } catch (err) {
-        // Unique-constraint clashes (e.g. duplicate synthetic email) — skip
-        console.error(`[stackjunior] sync student ${usernameLc}: ${err.message}`);
-      }
+  // ── 3. Classify into bulk-inserts vs targeted updates ─────────
+  const toCreate = [];
+  const updates  = [];
+  const claimed  = new Set(); // de-dupe new rows within this batch
+  for (const p of prepared) {
+    const user = (p.externalId && byExt.get(p.externalId))
+      || byEmail.get(p.emailForLocal)
+      || (p.usernameLc && byUser.get(p.usernameLc));
+    if (user) {
+      const u = {};
+      if (p.externalId && !user.externalId)                  u.externalId = p.externalId;
+      if (p.usernameLc && !user.username)                    u.username   = p.usernameLc;
+      if (schoolId && user.school !== schoolId)              u.school     = schoolId;
+      if (p.localClassId && user.classId !== p.localClassId) u.classId    = p.localClassId;
+      if (user.role !== 'student' && !['school_admin', 'super_admin'].includes(user.role))
+        u.role = 'student';
+      if (p.displayName && user.name !== p.displayName)      u.name       = p.displayName;
+      if (Object.keys(u).length) updates.push({ user, u });
     } else {
-      const updates = {};
-      if (usernameLc && !user.username)              updates.username = usernameLc;
-      if (schoolId   && user.school !== schoolId)    updates.school   = schoolId;
-      if (localClassId && user.classId !== localClassId) updates.classId = localClassId;
-      if (user.role !== 'student' && !['school_admin','super_admin'].includes(user.role))
-        updates.role = 'student';
-      if (displayName && user.name !== displayName)  updates.name     = displayName;
-      if (Object.keys(updates).length) {
-        try { await user.update(updates); synced++; }
-        catch (err) { console.error(`[stackjunior] update student ${usernameLc}: ${err.message}`); }
-      }
+      if (claimed.has(p.emailForLocal) || (p.usernameLc && claimed.has(p.usernameLc))) continue;
+      claimed.add(p.emailForLocal);
+      if (p.usernameLc) claimed.add(p.usernameLc);
+      toCreate.push({
+        name: p.displayName, email: p.emailForLocal, username: p.usernameLc,
+        externalId: p.externalId, password: crypto.randomBytes(24).toString('hex'),
+        role: 'student', school: schoolId, classId: p.localClassId, isActive: true,
+      });
     }
+  }
+
+  // ── 4. Bulk-insert new students in chunks (INSERT IGNORE) ─────
+  // Note: bulkCreate skips the password-hash hook; that's fine — these are
+  // SSO-only accounts with a random, unusable local password.
+  let synced = 0;
+  for (let i = 0; i < toCreate.length; i += 500) {
+    try {
+      const created = await User.bulkCreate(toCreate.slice(i, i + 500), {
+        validate: true, ignoreDuplicates: true,
+      });
+      synced += created.length;
+    } catch (err) {
+      console.error(`[stackjunior] bulk create students: ${err.message}`);
+    }
+  }
+
+  // ── 5. Apply the (usually few) updates ────────────────────────
+  for (const { user, u } of updates) {
+    try { await user.update(u); synced++; }
+    catch (err) { console.error(`[stackjunior] update student ${user.username}: ${err.message}`); }
   }
   return synced;
 };
 
 // Upsert classes returned by Stackjunior for the given school.
+// Classes are unique per school on BOTH externalId and name, and Stackjunior
+// can return duplicate class names — so each row is upserted defensively and a
+// row that can't be saved is skipped rather than aborting the whole sync
+// (which would also skip the student roster that runs afterwards).
 const upsertClassesForSchool = async (schoolId, externalClasses) => {
   if (!Array.isArray(externalClasses) || !externalClasses.length) return [];
   const results = [];
@@ -351,22 +393,26 @@ const upsertClassesForSchool = async (schoolId, externalClasses) => {
     const externalId = String(raw?.id ?? raw?.class_id ?? '').trim();
     const name       = raw?.name || raw?.class_name || raw?.title;
     if (!externalId && !name) continue;
-
-    const where = externalId
-      ? { schoolId, externalId }
-      : { schoolId, name };
-    let cls = await Class.findOne({ where });
-    if (!cls) {
-      cls = await Class.create({
-        schoolId,
-        externalId: externalId || null,
-        name:       name || `Class ${externalId}`,
-      });
-    } else if (name && cls.name !== name) {
-      cls.name = name;
-      await cls.save();
+    try {
+      // Match on externalId first, then fall back to name (both unique/school).
+      let cls = externalId
+        ? await Class.findOne({ where: { schoolId, externalId } })
+        : null;
+      if (!cls && name) cls = await Class.findOne({ where: { schoolId, name } });
+      if (!cls) {
+        cls = await Class.create({
+          schoolId,
+          externalId: externalId || null,
+          name:       name || `Class ${externalId}`,
+        });
+      } else if (externalId && !cls.externalId) {
+        await cls.update({ externalId });
+      }
+      results.push(cls);
+    } catch (err) {
+      // e.g. a duplicate class name — skip this one and keep going.
+      console.error(`[stackjunior] sync class ${externalId || name}: ${err.message}`);
     }
-    results.push(cls);
   }
   return results;
 };
@@ -451,17 +497,9 @@ const upsertExternalUser = async (identifier, payload) => {
   let teacherClassId = null;
   if (schoolId && jwt && ['school_admin', 'class_teacher', 'exam_officer'].includes(role)) {
     try {
+      // Classes are few — sync them synchronously so they're ready immediately.
       const classes = await fetchStackjuniorClasses(jwt);
       if (classes) await upsertClassesForSchool(schoolId, classes);
-
-      // Only school/admin types sync the full student roster
-      if (sjType === 'school' || sjType === 'admin') {
-        const students = await fetchStackjuniorStudents(jwt);
-        if (students) {
-          const synced = await upsertStudentsForSchool(schoolId, students);
-          if (synced) console.log(`[stackjunior] synced ${synced} student(s) for school ${schoolId}`);
-        }
-      }
 
       // For teachers, their assigned class id lives in school_admin_class_id
       const teacherExternalClassId =
@@ -472,12 +510,35 @@ const upsertExternalUser = async (identifier, payload) => {
         });
         teacherClassId = teacherClass?.id || null;
       }
+
+      // The student roster can be hundreds of rows — sync it in the BACKGROUND
+      // so it never blocks the login response (which caused "Signing you in…"
+      // to hang). It refreshes on every admin login, so eventual consistency
+      // is fine.
+      if (sjType === 'school' || sjType === 'admin') {
+        const since = Date.now() - (lastRosterSync.get(schoolId) || 0);
+        if (since >= ROSTER_SYNC_TTL_MS) {
+          lastRosterSync.set(schoolId, Date.now()); // claim up-front to avoid a stampede
+          fetchStackjuniorStudents(jwt)
+            .then((students) => (students ? upsertStudentsForSchool(schoolId, students) : 0))
+            .then((synced) => {
+              if (synced) console.log(`[stackjunior] synced ${synced} student(s) for school ${schoolId}`);
+            })
+            .catch((err) => {
+              lastRosterSync.delete(schoolId); // allow a retry on the next login
+              console.error(`[stackjunior] background roster sync failed: ${err.message}`);
+            });
+        }
+      }
     } catch (err) {
       console.error(`[stackjunior] roster sync failed: ${err.message}`);
     }
   }
 
-  const orClauses = [{ email: emailForLocal }];
+  const extId = u?.id != null ? String(u.id) : null;
+  const orClauses = [];
+  if (extId)      orClauses.push({ externalId: extId });
+  orClauses.push({ email: emailForLocal });
   if (usernameLc) orClauses.push({ username: usernameLc });
   let user = await User.findOne({ where: { [Op.or]: orClauses } });
 
@@ -491,6 +552,7 @@ const upsertExternalUser = async (identifier, payload) => {
       name:     displayName,
       email:    emailForLocal,
       username: usernameLc,
+      externalId: extId,
       password: crypto.randomBytes(24).toString('hex'),
       role,
       school:   schoolId,
@@ -499,7 +561,8 @@ const upsertExternalUser = async (identifier, payload) => {
     });
   } else {
     const updates = {};
-    if (usernameLc && !user.username)                 updates.username = usernameLc;
+    if (extId      && !user.externalId)                updates.externalId = extId;
+    if (usernameLc && !user.username)                  updates.username = usernameLc;
     if (schoolId   && user.school !== schoolId)        updates.school   = schoolId;
     if (role       && user.role !== role)              updates.role     = role;
     if (displayName && user.name !== displayName)      updates.name     = displayName;
@@ -602,6 +665,67 @@ exports.login = async (req, res, next) => {
     return res.status(401).json({ error: external.message || 'Invalid credentials.' });
   } catch (err) {
     console.error('[auth.login] unexpected error:', err.message);
+    next(err);
+  }
+};
+
+/**
+ * SSO entry — exchange a StackJunior-issued JWT for a local CBT session.
+ *
+ * Used when StackJunior redirects an already-authenticated web user to the CBT
+ * (e.g. /cbt?token=...). There is no password: the StackJunior JWT itself is
+ * the proof of identity. We validate it against StackJunior's authoritative
+ * profile endpoint, then reuse the exact same provisioning path as password
+ * login (upsertExternalUser → issueLocalSession).
+ *
+ * NOTE (verify on UAT): provisioning relies on the identity fields present in
+ * the /school/user/info response. Staff (school/admin/teacher/exam-officer)
+ * are fully resolved there; the student-token field shape (parent → school,
+ * class linkage) must be confirmed against the live StackJunior API before
+ * prod — see [[stackjunior-cbt-integration]].
+ */
+exports.ssoLogin = async (req, res, next) => {
+  const token = (req.body.token || req.query.token || '').trim();
+  if (!token) return res.status(400).json({ error: 'Missing SSO token.' });
+
+  try {
+    // Validate the token and resolve the authoritative account type. A null
+    // result means the token is invalid/expired or the service is unreachable.
+    const infoUser = await fetchStackjuniorUserInfo(token);
+    if (!infoUser) {
+      return res.status(401).json({ error: 'Invalid or expired single sign-on session.' });
+    }
+
+    const identifier = infoUser.email || infoUser.username || '';
+    if (!identifier) {
+      return res.status(502).json({ error: 'Could not resolve your account from StackJunior.' });
+    }
+
+    // Reuse the password-login provisioning by synthesising the login-response
+    // shape it expects. is_school routes school-side users through the
+    // authoritative /school/user/info classification inside upsertExternalUser;
+    // students (no school_user_type and no admin_school_id) take the student path.
+    const sjType    = String(infoUser.school_user_type || '').trim().toLowerCase();
+    const isStudent = sjType === 'student' || (!sjType && infoUser.admin_school_id == null);
+    const syntheticPayload = {
+      data: {
+        token,
+        user: { ...infoUser, is_school: !isStudent, is_parent: false },
+      },
+    };
+
+    let user;
+    try {
+      user = await upsertExternalUser(identifier, syntheticPayload);
+    } catch (err) {
+      if (err.statusCode === 403) return res.status(403).json({ error: err.message });
+      throw err;
+    }
+    if (!user.isActive) return res.status(401).json({ error: 'Account is inactive.' });
+
+    return res.json(await issueLocalSession(user, 'stackjunior-sso'));
+  } catch (err) {
+    console.error('[auth.ssoLogin] unexpected error:', err.message);
     next(err);
   }
 };

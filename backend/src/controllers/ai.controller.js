@@ -17,6 +17,20 @@ exports.generateFromContent = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+exports.generateFromExternalExam = async (req, res, next) => {
+  try {
+    const questions = await aiService.generateExternalExamQuestions(req.body);
+    res.json({ questions });
+  } catch (err) { next(err); }
+};
+
+exports.scanPaper = async (req, res, next) => {
+  try {
+    const questions = await aiService.scanPaperImage(req.body);
+    res.json({ questions });
+  } catch (err) { next(err); }
+};
+
 exports.saveGeneratedQuestions = async (req, res, next) => {
   try {
     const { questions, subject, topic, classLevel, difficulty } = req.body;
