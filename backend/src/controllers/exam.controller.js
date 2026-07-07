@@ -98,6 +98,7 @@ exports.getReadyExams = async (req, res, next) => {
       id:             e.id,
       title:          e.title,
       subject:        e.subject,
+      examType:       e.examType,
       classLevel:     e.classLevel,
       className:      e.classRecord?.name || null,
       mode:           e.mode,
